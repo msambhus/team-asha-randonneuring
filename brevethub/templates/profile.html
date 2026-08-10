@@ -792,13 +792,17 @@
       <section class="profile-panel">
         <div class="profile-panel-head"><h2>Membership</h2></div>
         <div class="membership-stack">
-          {% for pill in membership_pills %}
+          <div class="membership-row {% if rider.rusa_id and not field_status.rusa_duplicate %}ok{% else %}bad{% endif %}">
+            <span>RUSA</span>
+            <span class="status membership-rusa-status">
+              {% if rider.rusa_id %}{{ rider.rusa_id }}{% else %}Not provided{% endif %}
+              {% include 'partials/_rusa_id_status.html' %}
+            </span>
+          </div>
+          {% for pill in membership_pills if pill.label == 'SFR Membership' %}
           <div class="membership-row {% if pill.ok %}ok{% else %}bad{% endif %}">
             <span>{{ pill.label }}</span>
-            <span class="status{% if pill.label == 'RUSA #' %} membership-rusa-status{% endif %}">
-              {{ pill.status }}
-              {% if pill.label == 'RUSA #' %}{% include 'partials/_rusa_id_status.html' %}{% endif %}
-            </span>
+            <span class="status">{{ pill.status }}</span>
           </div>
           {% endfor %}
           <div class="membership-row {% if club %}ok{% else %}bad{% endif %}">
@@ -872,13 +876,17 @@
       <p class="text-text-light mb-4">Add your details once — they pre-fill every brevet registration.</p>
       {% if membership_pills %}
       <div class="membership-stack mb-4">
-        {% for pill in membership_pills %}
+        <div class="membership-row {% if rider.rusa_id and not field_status.rusa_duplicate %}ok{% else %}bad{% endif %}">
+          <span>RUSA</span>
+          <span class="status membership-rusa-status">
+            {% if rider.rusa_id %}{{ rider.rusa_id }}{% else %}Not provided{% endif %}
+            {% include 'partials/_rusa_id_status.html' %}
+          </span>
+        </div>
+        {% for pill in membership_pills if pill.label == 'SFR Membership' %}
         <div class="membership-row {% if pill.ok %}ok{% else %}bad{% endif %}">
           <span>{{ pill.label }}</span>
-          <span class="status{% if pill.label == 'RUSA #' %} membership-rusa-status{% endif %}">
-            {{ pill.status }}
-            {% if pill.label == 'RUSA #' %}{% include 'partials/_rusa_id_status.html' %}{% endif %}
-          </span>
+          <span class="status">{{ pill.status }}</span>
         </div>
         {% endfor %}
         <div class="membership-row {% if club %}ok{% else %}bad{% endif %}">

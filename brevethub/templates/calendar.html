@@ -13,6 +13,138 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     border: 1px solid var(--border);
 }
+.calendar-toolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: nowrap;
+    overflow: visible;
+    position: relative;
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    border-radius: 12px;
+    padding: 14px 18px 14px 22px;
+    margin-bottom: 12px;
+    border: 2px solid #cbd5e1;
+    box-shadow: 0 4px 16px rgba(31, 79, 133, 0.1);
+}
+.calendar-toolbar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 12px;
+    bottom: 12px;
+    width: 4px;
+    border-radius: 0 4px 4px 0;
+    background: var(--primary);
+}
+.calendar-toolbar-filters {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: visible;
+}
+.calendar-toolbar-filters .region-select-wrap {
+    flex: 0 0 auto;
+}
+.region-select-wrap--state { min-width: 92px; }
+.region-select-wrap--area { min-width: 150px; max-width: 220px; }
+.event-type-filter-wrap {
+    min-width: 124px;
+    max-width: 170px;
+    flex: 0 0 auto;
+}
+.event-type-multiselect {
+    position: relative;
+}
+.event-type-multiselect-trigger {
+    display: block;
+    width: 100%;
+    cursor: pointer;
+    padding: 8px 34px 8px 12px;
+    border-radius: 8px;
+    border: 2px solid #94a3b8;
+    background: white;
+    font-weight: 700;
+    font-size: 0.84rem;
+    color: var(--text);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+}
+.event-type-multiselect-trigger:hover { border-color: var(--primary); }
+.event-type-multiselect-trigger:focus-visible {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(26, 54, 93, 0.18);
+}
+.event-type-multiselect-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 120;
+    min-width: 100%;
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    padding: 6px 0;
+}
+.event-type-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.event-type-option:hover { background: #f8fafc; }
+.event-type-option input { width: 14px; height: 14px; margin: 0; cursor: pointer; }
+.calendar-toolbar-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+.calendar-toolbar-actions .calendar-view-toggle {
+    display: inline-flex;
+    border: 2px solid #94a3b8;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    background: #fff;
+}
+.calendar-toolbar-actions .calendar-view-toggle button {
+    padding: 8px 14px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    border: 0;
+    cursor: pointer;
+    color: var(--text);
+    background: #fff;
+}
+.calendar-toolbar-actions .calendar-view-toggle button.active {
+    background: var(--primary);
+    color: #fff;
+}
+.calendar-toolbar-actions .calendar-view-toggle button + button {
+    border-left: 1.5px solid var(--border);
+}
+.calendar-toolbar-hint {
+    font-size: 0.78rem;
+    color: var(--text-light);
+    margin: 0 0 16px;
+}
 .filter-label {
     font-weight: 700;
     color: var(--primary);
@@ -25,25 +157,42 @@
 .region-select-wrap {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    min-width: 200px;
-    flex: 1 1 200px;
+    gap: 4px;
 }
 .region-select-caption {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--muted, #64748b);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--primary);
     text-transform: uppercase;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.05em;
+}
+.calendar-toolbar .region-select {
+    cursor: pointer;
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 2px solid #94a3b8;
+    background: white;
+    font-weight: 700;
+    font-size: 0.84rem;
+    color: var(--text);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23475569' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 34px;
 }
 .region-select {
     cursor: pointer;
-    padding: 10px 14px;
+    width: 100%;
+    padding: 7px 10px;
     border-radius: 8px;
     border: 2px solid var(--border);
     background: white;
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 0.82rem;
     color: inherit;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     appearance: none;
@@ -52,6 +201,8 @@
     background-position: right 12px center;
     padding-right: 34px;
 }
+.calendar-toolbar .region-select:hover,
+.calendar-toolbar .event-type-multiselect-trigger:hover { border-color: var(--primary); }
 .region-select:hover { border-color: var(--primary); }
 .region-select:focus-visible {
     outline: none;
@@ -62,14 +213,6 @@
     cursor: not-allowed;
     opacity: 0.55;
     background-color: var(--card-bg, #f8fafc);
-}
-.event-type-btn {
-  padding: 6px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 600;
-  cursor: pointer; border: 2px solid var(--border); background: white;
-  color: var(--text-light); transition: all 0.2s;
-}
-.event-type-btn.active, .event-type-btn:hover {
-  background: var(--primary); color: white; border-color: var(--primary);
 }
 .month-section { margin-bottom: 40px; }
 .month-header {
@@ -604,14 +747,6 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
     background: #fee2e2;
     border-color: #fca5a5;
 }
-.calendar-membership-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.calendar-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 5px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
-    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); color: #e2e8f0;
-}
-.calendar-pill.ok { border-color: rgba(16,185,129,0.45); }
-.calendar-pill.bad { border-color: rgba(239,68,68,0.45); }
 .reg-modal-backdrop {
     position: fixed; inset: 0; background: rgba(8,16,30,0.65);
     display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 200;
@@ -763,38 +898,15 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 <div class="hero" style="padding:40px 20px;">
   <h1>Upcoming brevets</h1>
   <p>Browse the calendar and register for San Francisco Randonneurs brevets with one saved profile and a fresh waiver for each event.</p>
-  {% if rider and membership_pills %}
-  <div class="calendar-membership-pills">
-    {% for pill in membership_pills %}
-    <span class="calendar-pill {% if pill.ok %}ok{% else %}bad{% endif %}">{{ pill.label }} · {{ pill.status }}</span>
-    {% endfor %}
-    <a href="{{ url_for('main.profile') }}#edit-profile" class="calendar-pill ok" style="text-decoration:none;">Edit profile</a>
-  </div>
-  {% elif not rider %}
+  {% if not rider %}
   <p style="margin-top:12px;"><a class="btn btn-primary" href="{{ url_for('auth.login', next=url_for('calendar.calendar')) }}">Sign in to register</a></p>
   {% endif %}
 </div>
 
 <div class="container section calendar-layout">
 
-  <div class="filter-section mb-3">
-    <div class="filter-label" id="type-filter-label">Event type</div>
-    <div class="flex flex-wrap gap-2" role="group" aria-labelledby="type-filter-label">
-      <button type="button" class="event-type-btn active" data-event-type="all">All types</button>
-      <button type="button" class="event-type-btn" data-event-type="acp_brevet">ACP Brevet</button>
-      <button type="button" class="event-type-btn" data-event-type="rusa_brevet">RUSA Brevet</button>
-      <button type="button" class="event-type-btn" data-event-type="populaire">Populaire</button>
-      <button type="button" class="event-type-btn" data-event-type="fleche">Flèche / Dart</button>
-      <button type="button" class="event-type-btn" data-event-type="other">Other</button>
-    </div>
-  </div>
-
-  <p class="text-text-light mb-5">
-    Start location and time are shown only when a source provides them.
-  </p>
-
   {% if degraded %}
-    <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-5">
+    <p class="py-3 px-4 rounded-lg text-sm bg-[#fef3c7] text-[#78350f] mb-4">
       {% if degraded == 'empty' %}
         No brevets to show right now — RUSA may be temporarily unavailable. Please
         check back shortly.
@@ -804,42 +916,61 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
     </p>
   {% endif %}
 
-  {% if states %}
-    <div class="filter-section">
-      <div class="filter-label" id="region-filter-label">Region</div>
-      {% if default_state %}
-      <p class="text-text-light text-sm mb-3">
-        Starting with rides near your home club{% if club %}, {{ club.name }}{% endif %}.
-        Choose <strong>All states</strong> or another filter to expand your search.
-      </p>
+  <div class="calendar-toolbar">
+    <div class="calendar-toolbar-filters">
+      <label class="region-select-wrap event-type-filter-wrap">
+        <span class="region-select-caption">Event type</span>
+        <div class="event-type-multiselect">
+          <button type="button" class="event-type-multiselect-trigger" id="event-type-trigger"
+                  aria-haspopup="listbox" aria-expanded="false" aria-controls="event-type-panel">
+            <span id="event-type-summary">All types</span>
+          </button>
+          <div class="event-type-multiselect-panel" id="event-type-panel" role="listbox" aria-label="Event type" hidden>
+            <label class="event-type-option"><input type="checkbox" value="all" data-event-type="all" checked> All types</label>
+            <label class="event-type-option"><input type="checkbox" value="acp_brevet" data-event-type="acp_brevet"> ACP Brevet</label>
+            <label class="event-type-option"><input type="checkbox" value="rusa_brevet" data-event-type="rusa_brevet"> RUSA Brevet</label>
+            <label class="event-type-option"><input type="checkbox" value="populaire" data-event-type="populaire"> Populaire</label>
+            <label class="event-type-option"><input type="checkbox" value="fleche" data-event-type="fleche"> Flèche / Dart</label>
+            <label class="event-type-option"><input type="checkbox" value="other" data-event-type="other"> Other</label>
+          </div>
+        </div>
+      </label>
+      {% if states %}
+      <label class="region-select-wrap region-select-wrap--state">
+        <span class="region-select-caption">State</span>
+        <select id="region-state" class="region-select" aria-label="Filter by state">
+          <option value="all">All states</option>
+          {% for st in states %}
+            <option value="{{ st }}">{{ st }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="region-select-wrap region-select-wrap--area">
+        <span class="region-select-caption">Area</span>
+        <select id="region-area" class="region-select"
+                aria-label="Filter by area" disabled>
+          <option value="all">All areas</option>
+        </select>
+      </label>
       {% endif %}
-      <div class="region-selects" role="group" aria-labelledby="region-filter-label">
-        <label class="region-select-wrap">
-          <span class="region-select-caption">State</span>
-          <select id="region-state" class="region-select" aria-label="Filter by state">
-            <option value="all">All states</option>
-            {% for st in states %}
-              <option value="{{ st }}">{{ st }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="region-select-wrap">
-          <span class="region-select-caption">Area</span>
-          <select id="region-area" class="region-select"
-                  aria-label="Filter by area" disabled>
-            <option value="all">All areas</option>
-          </select>
-        </label>
-        <label class="region-select-wrap">
-          <span class="region-select-caption">Club</span>
-          <select id="club-filter" class="region-select" aria-label="Filter by club">
-            <option value="all">All clubs</option>
-            {% for club_name in clubs or [] %}<option value="{{ club_name|e }}">{{ club_name }}</option>{% endfor %}
-          </select>
-        </label>
+    </div>
+    {% if months %}
+    <div class="calendar-toolbar-actions">
+      <div class="calendar-view-toggle" role="group" aria-label="Calendar layout">
+        <button type="button" class="active" data-calendar-view="cards">Cards</button>
+        <button type="button" data-calendar-view="table">Table</button>
       </div>
     </div>
-  {% endif %}
+    {% endif %}
+  </div>
+
+  <p class="calendar-toolbar-hint">
+    Start location and time are shown only when a source provides them.
+    {% if default_state %}
+    Starting with rides near your home club{% if club %}, {{ club.name }}{% endif %} —
+    choose <strong>All states</strong> to expand your search.
+    {% endif %}
+  </p>
 
   {% if rider %}
   <div id="bulk-register-bar" class="bulk-register-bar" hidden>
@@ -857,6 +988,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
 
   {% if months %}
     {% set calendar_app = 'brevethub' %}
+    {% set external_view_toggle = true %}
     {% include 'partials/_calendar_upcoming_table.html' with context %}
     <div id="calendar-cards-view" data-signup-base="/calendar">
       {% for month_label, month_events in months %}
@@ -868,7 +1000,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                 <article class="event-card" data-event-id="{{ ev.id }}"
                        data-region="{{ (ev.region or '').split(':')[0]|trim }}"
                        data-area="{{ ((ev.region or '') ~ ':').split(':')[1]|trim }}"
-                       data-club="{{ (ev.club_name or '')|e }}"
+                       data-region-full="{{ ev.region or '' }}"
                        data-event-category="{{ ev.data_category or 'other' }}">
                 {% if rider and ev.registration_enabled and not my_registrations.get(ev.id) %}
                 <label class="bulk-select-wrap" title="Select for bulk registration">
@@ -1491,30 +1623,86 @@ document.addEventListener('change', function (e) {
 {% endif %}
 
 {# Client-side region + event-type filter (guests included): cascading State -> Area
-   dropdowns plus event-type pill buttons. Filters event cards and hides months that
+   dropdowns plus event-type multi-select. Filters event cards and hides months that
    end up empty. #}
 <script>
 (function () {
   var regionsByState = {{ regions_by_state|tojson }};
   var stateSel = document.getElementById('region-state');
   var areaSel = document.getElementById('region-area');
-  var clubSel = document.getElementById('club-filter');
-  if (!stateSel || !areaSel) return;
+  var typeTrigger = document.getElementById('event-type-trigger');
+  var typePanel = document.getElementById('event-type-panel');
+  var typeSummary = document.getElementById('event-type-summary');
+  var typeInputs = typePanel
+    ? Array.prototype.slice.call(typePanel.querySelectorAll('input[data-event-type]'))
+    : [];
   var defaultState = {{ (default_state or '')|tojson }};
-  var defaultClub = {{ (default_club or '')|tojson }};
+  var TYPE_LABELS = {
+    all: 'All types',
+    acp_brevet: 'ACP Brevet',
+    rusa_brevet: 'RUSA Brevet',
+    populaire: 'Populaire',
+    fleche: 'Flèche / Dart',
+    other: 'Other'
+  };
 
   var activeTypes = new Set(['all']);
 
+  function syncTypeInputs() {
+    typeInputs.forEach(function (input) {
+      var t = input.getAttribute('data-event-type');
+      input.checked = activeTypes.has('all') ? (t === 'all') : activeTypes.has(t);
+    });
+  }
+
+  function updateTypeSummary() {
+    if (!typeSummary) return;
+    if (activeTypes.has('all') || activeTypes.size === 0) {
+      typeSummary.textContent = 'All types';
+      return;
+    }
+    var labels = Array.from(activeTypes).map(function (t) { return TYPE_LABELS[t] || t; });
+    typeSummary.textContent = labels.length === 1
+      ? labels[0]
+      : labels[0] + ' +' + (labels.length - 1);
+  }
+
+  function closeTypePanel() {
+    if (!typePanel || !typeTrigger) return;
+    typePanel.hidden = true;
+    typePanel.style.position = '';
+    typePanel.style.left = '';
+    typePanel.style.top = '';
+    typePanel.style.minWidth = '';
+    typePanel.style.zIndex = '';
+    typeTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function positionTypePanel() {
+    if (!typePanel || !typeTrigger) return;
+    var rect = typeTrigger.getBoundingClientRect();
+    typePanel.style.position = 'fixed';
+    typePanel.style.left = Math.max(8, rect.left) + 'px';
+    typePanel.style.top = (rect.bottom + 4) + 'px';
+    typePanel.style.minWidth = Math.max(rect.width, 220) + 'px';
+    typePanel.style.zIndex = '500';
+  }
+
+  function openTypePanel() {
+    if (!typePanel || !typeTrigger) return;
+    typePanel.hidden = false;
+    positionTypePanel();
+    typeTrigger.setAttribute('aria-expanded', 'true');
+  }
+
   function apply() {
-    var st = stateSel.value;
-    var ar = areaSel.value;
-    var club = clubSel ? clubSel.value : 'all';
+    var st = stateSel ? stateSel.value : 'all';
+    var ar = areaSel ? areaSel.value : 'all';
     document.querySelectorAll('.event-card[data-region], .calendar-event-row[data-region]').forEach(function (c) {
       var stateOk = (st === 'all' || c.dataset.region === st);
       var areaOk = (ar === 'all' || c.dataset.area === ar);
-      var clubOk = (club === 'all' || c.dataset.club === club);
       var typeOk = activeTypes.has('all') || activeTypes.has(c.dataset.eventCategory);
-      c.style.display = (stateOk && areaOk && clubOk && typeOk) ? '' : 'none';
+      c.style.display = (stateOk && areaOk && typeOk) ? '' : 'none';
     });
     document.querySelectorAll('.month-section').forEach(function (sec) {
       var shown = Array.prototype.filter.call(
@@ -1525,6 +1713,7 @@ document.addEventListener('change', function (e) {
   }
 
   function repopulateAreas() {
+    if (!stateSel || !areaSel) return;
     var st = stateSel.value;
     var areas = (st !== 'all' && regionsByState[st]) ? regionsByState[st] : [];
     areaSel.innerHTML = '';
@@ -1542,48 +1731,59 @@ document.addEventListener('change', function (e) {
     areaSel.disabled = (areas.length === 0);
   }
 
-  stateSel.addEventListener('change', function () { repopulateAreas(); apply(); });
-  areaSel.addEventListener('change', apply);
-  if (clubSel) clubSel.addEventListener('change', apply);
-
-  document.querySelectorAll('.event-type-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var t = btn.getAttribute('data-event-type');
-      if (t === 'all') {
-        activeTypes = new Set(['all']);
-        document.querySelectorAll('.event-type-btn').forEach(function (b) {
-          b.classList.toggle('active', b.getAttribute('data-event-type') === 'all');
-        });
-      } else {
-        activeTypes.delete('all');
-        if (activeTypes.has(t)) {
-          activeTypes.delete(t);
-          btn.classList.remove('active');
-        } else {
-          activeTypes.add(t);
-          btn.classList.add('active');
-        }
-        // If nothing selected, revert to "All"
-        if (activeTypes.size === 0) {
-          activeTypes = new Set(['all']);
-          document.querySelectorAll('.event-type-btn').forEach(function (b) {
-            b.classList.toggle('active', b.getAttribute('data-event-type') === 'all');
-          });
-        } else {
-          document.querySelector('.event-type-btn[data-event-type="all"]').classList.remove('active');
-        }
-      }
-      apply();
+  if (typeTrigger && typePanel) {
+    typeTrigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (typePanel.hidden) openTypePanel();
+      else closeTypePanel();
     });
-  });
 
-  if (defaultState && Array.prototype.some.call(stateSel.options, function (o) { return o.value === defaultState; })) {
-    stateSel.value = defaultState;
+    typeInputs.forEach(function (input) {
+      input.addEventListener('change', function () {
+        var t = input.getAttribute('data-event-type');
+        if (t === 'all') {
+          activeTypes = new Set(['all']);
+        } else {
+          activeTypes.delete('all');
+          if (input.checked) activeTypes.add(t);
+          else activeTypes.delete(t);
+          if (activeTypes.size === 0) activeTypes = new Set(['all']);
+        }
+        syncTypeInputs();
+        updateTypeSummary();
+        apply();
+      });
+    });
+
+    typePanel.addEventListener('mousedown', function (e) {
+      e.stopPropagation();
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!typePanel.contains(e.target) && e.target !== typeTrigger && !typeTrigger.contains(e.target)) {
+        closeTypePanel();
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeTypePanel();
+    });
+
+    window.addEventListener('resize', closeTypePanel);
+    window.addEventListener('scroll', closeTypePanel, true);
   }
-  repopulateAreas();
-  if (defaultClub && clubSel && Array.prototype.some.call(clubSel.options, function (o) { return o.value === defaultClub; })) {
-    clubSel.value = defaultClub;
+
+  if (stateSel && areaSel) {
+    stateSel.addEventListener('change', function () { repopulateAreas(); apply(); });
+    areaSel.addEventListener('change', apply);
+    if (defaultState && Array.prototype.some.call(stateSel.options, function (o) { return o.value === defaultState; })) {
+      stateSel.value = defaultState;
+    }
+    repopulateAreas();
   }
+
+  syncTypeInputs();
+  updateTypeSummary();
   apply();
 })();
 </script>

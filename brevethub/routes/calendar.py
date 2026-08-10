@@ -205,8 +205,6 @@ def calendar():
     regions_by_state = {st: sorted(areas)
                         for st, areas in sorted(regions_by_state.items())}
     states = list(regions_by_state.keys())
-    clubs = sorted({(ev.get('club_name') or '').strip() for ev in events
-                    if (ev.get('club_name') or '').strip()})
 
     # Weather badges are CACHE-READ-ONLY: one query for every event on the page,
     # then summarize the stored raw forecast in-process. NO Open-Meteo/RWGPS fetch
@@ -256,7 +254,6 @@ def calendar():
         my_volunteer_signups = {}
 
     default_state = (club or {}).get('state') if club else None
-    default_club = (club or {}).get('name') if club else None
     post_ride_open_by_event = {
         ev['id']: models.event_post_ride_open(ev) for ev in events
     }
@@ -268,8 +265,8 @@ def calendar():
         post_ride_open_by_event=post_ride_open_by_event,
         proof_by_event=proof_by_event,
         my_results=my_results, rider=rider, club=club, states=states,
-        regions_by_state=regions_by_state, clubs=clubs,
-        default_state=default_state, default_club=default_club,
+        regions_by_state=regions_by_state,
+        default_state=default_state,
         followed_live_event_ids=followed_live_event_ids,
         my_volunteer_signups=my_volunteer_signups,
         volunteer_summary_by_event=volunteer_summary_by_event,
