@@ -139,7 +139,8 @@ _RIDER_PROFILE_COLS = (
     "id, email, google_id, rusa_id, club_id, "
     "profile_completed, rusa_id_duplicate, created_at, last_login_at, "
     "first_name, last_name, phone, city, emergency_name, emergency_phone, "
-    "sfr_member_year, eddington_km, eddington_miles, eddington_calculated_at"
+    "sfr_member_year, rusa_membership_expires, rusa_membership_checked_at, "
+    "eddington_km, eddington_miles, eddington_calculated_at"
 )
 
 
@@ -148,6 +149,62 @@ def get_rider_by_google_id(google_id):
         f"SELECT {_RIDER_PROFILE_COLS} FROM rp_rider WHERE google_id = %s",
         (google_id,),
     )
+
+
+def get_rider_membership_fields(rider_id):
+    """Lightweight membership lookup for global nav banners."""
+    row = db.query_one(
+        "SELECT rusa_id, sfr_member_year, rusa_membership_expires, "
+        "       rusa_membership_checked_at "
+        "FROM rp_rider WHERE id = %s",
+        (rider_id,),
+    )
+    if not row:
+        return None
+    return {
+        'rusa_id': row['rusa_id'],
+        'sfr_member_year': row['sfr_member_year'],
+        'rusa_membership_expires': row['rusa_membership_expires'],
+        'rusa_membership_checked_at': row['rusa_membership_checked_at'],
+    }
+
+
+def get_rider_by_rusa_id(rusa_id):
+    if not rusa_id:
+        return None
+    return db.query_one(
+        f"SELECT {_RIDER_PROFILE_COLS} FROM rp_rider WHERE rusa_id = %s",
+        (str(rusa_id),),
+    )
+
+
+def update_rider_rusa_membership(rider_id, *, membership_expires, checked_at=None):
+    """Persist a RUSA.org membership scrape (NULL expiry = not found or unknown)."""
+    return db.execute(
+        "UPDATE rp_rider SET rusa_membership_expires = %s, "
+        "    rusa_membership_checked_at = COALESCE(%s, NOW()) "
+        "WHERE id = %s "
+        f"RETURNING {_RIDER_PROFILE_COLS}",
+        (membership_expires, checked_at, rider_id),
+        returning=True,
+    )
+
+
+def clear_rider_rusa_membership_cache(rider_id):
+    return db.execute(
+        "UPDATE rp_rider SET rusa_membership_expires = NULL, "
+        "    rusa_membership_checked_at = NULL "
+        "WHERE id = %s "
+        f"RETURNING {_RIDER_PROFILE_COLS}",
+        (rider_id,),
+        returning=True,
+    )
+
+
+def get_rider_membership_year(rider_id):
+    """Back-compat: return SFR membership year only."""
+    fields = get_rider_membership_fields(rider_id)
+    return fields['sfr_member_year'] if fields else None
 
 
 def get_rider_by_id(rider_id):

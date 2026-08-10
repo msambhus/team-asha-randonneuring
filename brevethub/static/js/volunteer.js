@@ -149,9 +149,9 @@
     return document.querySelector('.event-card[data-event-id="' + eid + '"]');
   }
 
-  function getVolunteerStrip(eid) {
+  function getVolunteerChip(eid) {
     var card = getEventCard(eid);
-    return card ? card.querySelector('.volunteer-strip') : null;
+    return card ? card.querySelector('[data-volunteer-chip]') : null;
   }
 
   function slotTotals(slots) {
@@ -166,99 +166,61 @@
     return { capacity: capacity, confirmed: confirmed, open: open };
   }
 
-  function renderVolBody(strip, eid, activeSignups) {
-    var bodyEl = strip.querySelector('.vol-body');
-    if (!bodyEl) return;
-    bodyEl.innerHTML = '';
+  function renderVolunteerChip(chip, eid, activeSignups, totals) {
+    if (!chip) return;
+
     if (activeSignups && activeSignups.length) {
       var first = activeSignups[0];
-      var tag = document.createElement('button');
-      tag.type = 'button';
-      tag.className = 'vol-role-tag is-active' + (first.status === 'exception' ? ' is-pending' : '');
-      tag.setAttribute('data-volunteer-event', eid);
-      tag.setAttribute('title', 'View or change volunteer role');
-      tag.textContent = first.role_name + (first.status === 'exception' ? ' · pending' : '');
-      bodyEl.appendChild(tag);
-      if (activeSignups.length > 1) {
-        var more = document.createElement('span');
-        more.className = 'vol-more';
-        more.textContent = '+' + (activeSignups.length - 1);
-        bodyEl.appendChild(more);
-      }
+      chip.hidden = false;
+      chip.className = 'volunteer-chip is-active' + (first.status === 'exception' ? ' is-pending' : '');
+      chip.setAttribute('type', 'button');
+      chip.setAttribute('data-volunteer-event', String(eid));
+      chip.setAttribute('title', 'View or change volunteer role');
+      var roleLabel = first.role_name + (first.status === 'exception' ? ' · pending' : '');
+      if (activeSignups.length > 1) roleLabel += ' +' + (activeSignups.length - 1);
+      chip.innerHTML = 'Volunteering · <span class="vol-role-name">' + roleLabel + '</span>';
       return;
     }
-    var summary = document.createElement('span');
-    summary.className = 'vol-summary';
-    summary.textContent = '…';
-    summary.setAttribute('data-vol-summary', '1');
-    bodyEl.appendChild(summary);
-  }
 
-  function updateVolBar(strip, totals) {
-    var bar = strip.querySelector('.vol-bar');
-    var fill = strip.querySelector('.vol-bar-fill');
-    if (!bar || !fill || !totals.capacity) return;
-    var pct = Math.round((totals.confirmed * 100) / totals.capacity);
-    fill.style.width = pct + '%';
-    bar.title = totals.confirmed + '/' + totals.capacity + ' filled';
-    bar.setAttribute('aria-label', totals.confirmed + ' of ' + totals.capacity + ' volunteer slots filled');
-    bar.classList.toggle('is-full', totals.open <= 0);
-  }
-
-  function updateVolSummary(strip, totals) {
-    var summary = strip.querySelector('[data-vol-summary]');
-    if (!summary) return;
-    if (totals.open > 0) {
-      summary.textContent = totals.open + ' role' + (totals.open === 1 ? '' : 's') + ' open';
-    } else {
-      summary.textContent = 'Filled';
+    if (totals && totals.open > 0) {
+      chip.hidden = false;
+      chip.className = 'volunteer-chip is-needed';
+      chip.setAttribute('type', 'button');
+      chip.setAttribute('data-volunteer-event', String(eid));
+      chip.setAttribute('title', totals.confirmed + '/' + totals.capacity + ' volunteer slots filled');
+      chip.innerHTML = '🤝 Volunteers needed · <span data-vol-summary>'
+        + totals.open + ' role' + (totals.open === 1 ? '' : 's') + '</span>';
+      return;
     }
+
+    chip.hidden = true;
+    chip.removeAttribute('data-volunteer-event');
   }
 
   function syncVolunteerStrip(eid, activeSignups) {
-    var strip = getVolunteerStrip(eid);
-    if (!strip) return;
+    var chip = getVolunteerChip(eid);
+    if (!chip) return;
 
-    renderVolBody(strip, eid, activeSignups);
-
+    var actions = document.querySelector('.signup-actions[data-event-id="' + eid + '"]');
     if (activeSignups && activeSignups.length) {
-      strip.removeAttribute('data-volunteer-event');
-      strip.removeAttribute('role');
-      strip.removeAttribute('tabindex');
-      strip.removeAttribute('title');
-
-      var actions = document.querySelector('.signup-actions[data-event-id="' + eid + '"]');
       if (actions) {
         actions.setAttribute('data-volunteering', '1');
-        var volBtn = actions.querySelector('button[data-volunteer-event]');
-        if (volBtn) volBtn.remove();
+        if (window.renderSignupActions) renderSignupActions(actions);
       }
-    } else {
-      strip.classList.add('is-clickable');
-      strip.setAttribute('data-volunteer-event', eid);
-      strip.setAttribute('role', 'button');
-      strip.setAttribute('tabindex', '0');
-      strip.setAttribute('title', 'Sign up to volunteer');
+      renderVolunteerChip(chip, eid, activeSignups, null);
+      return;
+    }
 
-      var actions = document.querySelector('.signup-actions[data-event-id="' + eid + '"]');
-      if (actions && actions.getAttribute('data-volunteer-enabled') === '1'
-          && !actions.querySelector('button[data-volunteer-event]')) {
-        actions.removeAttribute('data-volunteering');
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'signup-btn volunteer-btn';
-        btn.setAttribute('data-volunteer-event', eid);
-        btn.textContent = 'Volunteer';
-        actions.appendChild(btn);
-      }
+    if (actions) {
+      actions.removeAttribute('data-volunteering');
+      if (window.renderSignupActions) renderSignupActions(actions);
     }
 
     fetch('/calendar/' + eid + '/volunteer/slots')
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var totals = slotTotals(data.slots || []);
-        updateVolBar(strip, totals);
-        updateVolSummary(strip, totals);
+        renderVolunteerChip(chip, eid, null, totals);
       })
       .catch(function () { /* noop */ });
   }
@@ -301,6 +263,7 @@
   document.addEventListener('click', function (e) {
     var openBtn = e.target.closest('[data-volunteer-event]');
     if (openBtn) {
+      if (window.closeAllEventActionMenus) closeAllEventActionMenus();
       openModal(parseInt(openBtn.getAttribute('data-volunteer-event'), 10));
       return;
     }

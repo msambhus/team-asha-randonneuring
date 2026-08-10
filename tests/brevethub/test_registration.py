@@ -1,20 +1,58 @@
 """Tests for brevet registration validation (no DB required)."""
+from datetime import date
 from unittest.mock import patch
 
 from brevethub.services.registration import (
     evaluate_registration,
+    membership_season_year,
     normalize_rusa_id,
     normalize_us_phone,
     profile_field_status,
     registration_open,
     resolve_rusa_id_for_save,
+    rusa_membership_needs_refresh,
+    refresh_rusa_membership,
+    rusa_status_from_rider_row,
+    sfr_membership_current,
     validate_profile_phones,
     validate_rusa_profile_fields,
 )
 
 
+def _current_rusa_lookup(**overrides):
+    base = {
+        'found': True,
+        'rusa_id': '12847',
+        'membership_expires': '2026-12-31',
+        'current': True,
+        'error': None,
+        'from_cache': True,
+    }
+    base.update(overrides)
+    return base
+
+
+def _membership_bundle(**rusa_overrides):
+    rusa = _current_rusa_lookup(**rusa_overrides)
+    return {
+        'season_year': 2026,
+        'rusa': {
+            **rusa,
+            'renew_url': 'https://rusa.org/pages/join-renew-membership',
+            'expired': not rusa['current'],
+        },
+        'sfr': {
+            'member_year': 2026,
+            'current': True,
+            'expired': False,
+            'renew_url': 'https://sfrandonneurs.org/',
+        },
+    }
+
+
 def _rider(**kwargs):
     base = {
+        'id': 1,
         'first_name': 'Alex',
         'last_name': 'Mercer',
         'phone': '415-555-0142',
@@ -49,10 +87,34 @@ def _mock_rusa_valid(mock_validate):
     }
 
 
+def _mock_refresh_rusa(mock_refresh, rider=None):
+    r = rider or _rider()
+    mock_refresh.return_value = (r, _current_rusa_lookup(from_cache=False))
+
+
 def test_profile_complete_when_all_fields_present():
-    status = profile_field_status(_rider())
+    status = profile_field_status(_rider(), rusa_lookup=_current_rusa_lookup())
     assert status['complete'] is True
     assert status['sfr_member_current'] is True
+    assert status['rusa_membership_current'] is True
+
+
+def test_membership_season_year_calendar_year():
+    assert membership_season_year(date(2026, 1, 1)) == 2026
+    assert membership_season_year(date(2026, 12, 31)) == 2026
+    assert membership_season_year(date(2026, 8, 9)) == 2026
+
+
+def test_sfr_membership_valid_through_dec_31():
+    rider = _rider(sfr_member_year=2026)
+    assert sfr_membership_current(rider, date(2026, 12, 31)) is True
+    assert sfr_membership_current(rider, date(2026, 8, 9)) is True
+    assert sfr_membership_current(rider, date(2027, 1, 1)) is False
+
+
+def test_sfr_membership_expired_when_year_behind():
+    rider = _rider(sfr_member_year=2025)
+    assert sfr_membership_current(rider, date(2026, 8, 9)) is False
 
 
 def test_profile_incomplete_lists_missing_fields():
@@ -67,18 +129,63 @@ def test_registration_open_respects_deadline_and_capacity():
     assert registration_open(_event(capacity=5), confirmed_count=5) is False
 
 
+@patch('brevethub.services.registration.refresh_rusa_membership')
+@patch('brevethub.services.registration.membership_status')
 @patch('brevethub.services.registration._validate_rusa_with_org')
-def test_evaluate_registration_confirms_clean_rider(mock_validate):
+def test_evaluate_registration_confirms_clean_rider(mock_validate, mock_member_status, mock_refresh):
     _mock_rusa_valid(mock_validate)
+    _mock_refresh_rusa(mock_refresh)
+    mock_member_status.return_value = _membership_bundle()
     result = evaluate_registration(_rider(), _event(), confirmed_count=0)
     assert result['ok'] is True
     assert result['registration_status'] == 'confirmed'
     assert result['exceptions'] == []
 
 
-def test_evaluate_registration_flags_exceptions_without_blocking():
+@patch('brevethub.services.registration.refresh_rusa_membership')
+@patch('brevethub.services.registration.membership_status')
+@patch('brevethub.services.registration._validate_rusa_with_org')
+def test_evaluate_registration_blocks_expired_sfr_membership(mock_validate, mock_member_status, mock_refresh):
+    _mock_rusa_valid(mock_validate)
+    rider = _rider(sfr_member_year=2020)
+    _mock_refresh_rusa(mock_refresh, rider)
+    mock_member_status.return_value = _membership_bundle()
+    mock_member_status.return_value['sfr']['expired'] = True
+    mock_member_status.return_value['sfr']['current'] = False
+    mock_member_status.return_value['sfr']['member_year'] = 2020
     result = evaluate_registration(
-        _rider(rusa_id=None, sfr_member_year=2020),
+        rider,
+        _event(),
+        confirmed_count=0,
+    )
+    assert result['ok'] is False
+    assert result['sfr_membership_expired'] is True
+    assert result['registration_status'] is None
+    assert any('SFR' in b for b in result['blockers'])
+
+
+@patch('brevethub.services.registration.refresh_rusa_membership')
+@patch('brevethub.services.registration.membership_status')
+@patch('brevethub.services.registration._validate_rusa_with_org')
+def test_evaluate_registration_blocks_expired_rusa_membership(mock_validate, mock_member_status, mock_refresh):
+    _mock_rusa_valid(mock_validate)
+    _mock_refresh_rusa(mock_refresh)
+    bundle = _membership_bundle(current=False, membership_expires='2025-12-31')
+    bundle['rusa']['expired'] = True
+    mock_member_status.return_value = bundle
+    result = evaluate_registration(_rider(), _event(), confirmed_count=0)
+    assert result['ok'] is False
+    assert result['rusa_membership_expired'] is True
+    assert any('RUSA' in b for b in result['blockers'])
+
+
+@patch('brevethub.services.registration.refresh_rusa_membership')
+@patch('brevethub.services.registration.membership_status')
+def test_evaluate_registration_flags_rusa_missing_as_exception(mock_member_status, mock_refresh):
+    _mock_refresh_rusa(mock_refresh, _rider(rusa_id=None, sfr_member_year=2026))
+    mock_member_status.return_value = _membership_bundle()
+    result = evaluate_registration(
+        _rider(rusa_id=None, sfr_member_year=2026),
         _event(),
         confirmed_count=0,
     )
@@ -87,14 +194,22 @@ def test_evaluate_registration_flags_exceptions_without_blocking():
     assert result['exceptions']
 
 
-def test_evaluate_registration_blocks_incomplete_profile():
+@patch('brevethub.services.registration.refresh_rusa_membership')
+@patch('brevethub.services.registration.membership_status')
+def test_evaluate_registration_blocks_incomplete_profile(mock_member_status, mock_refresh):
+    _mock_refresh_rusa(mock_refresh, _rider(phone=''))
+    mock_member_status.return_value = _membership_bundle()
     result = evaluate_registration(_rider(phone=''), _event(), confirmed_count=0)
     assert result['ok'] is False
     assert result['registration_status'] is None
 
 
+@patch('brevethub.services.registration.refresh_rusa_membership')
+@patch('brevethub.services.registration.membership_status')
 @patch('brevethub.services.registration._validate_rusa_with_org')
-def test_evaluate_registration_blocks_invalid_rusa(mock_validate):
+def test_evaluate_registration_blocks_invalid_rusa(mock_validate, mock_member_status, mock_refresh):
+    _mock_refresh_rusa(mock_refresh)
+    mock_member_status.return_value = _membership_bundle()
     mock_validate.return_value = {
         'valid': False,
         'error': 'Name mismatch. RUSA record shows: Smith, Alex',
@@ -146,7 +261,7 @@ def test_validate_profile_phones_returns_field_errors():
 
 
 def test_profile_incomplete_when_phone_format_invalid():
-    status = profile_field_status(_rider(phone='12345'))
+    status = profile_field_status(_rider(phone='12345'), rusa_lookup=_current_rusa_lookup())
     assert status['complete'] is False
     assert 'phone' in status['missing']
 
@@ -176,3 +291,45 @@ def test_resolve_rusa_id_for_save_skips_empty():
     normalized, errors = resolve_rusa_id_for_save('', 'Alex', 'Mercer')
     assert normalized is None
     assert errors == {}
+
+
+def test_rusa_membership_needs_refresh_when_expired_or_missing():
+    assert rusa_membership_needs_refresh(
+        _rider(rusa_membership_expires=date(2025, 12, 31)), date(2026, 8, 9))
+    assert rusa_membership_needs_refresh(_rider(
+        rusa_membership_checked_at=date(2026, 1, 1), rusa_membership_expires=None))
+    assert not rusa_membership_needs_refresh(
+        _rider(
+            rusa_membership_expires=date(2026, 12, 31),
+            rusa_membership_checked_at=date(2026, 1, 1),
+        ),
+        date(2026, 8, 9),
+    )
+
+
+def test_rusa_status_from_rider_row_uses_db_cache():
+    status = rusa_status_from_rider_row(
+        _rider(
+            rusa_membership_expires=date(2026, 12, 31),
+            rusa_membership_checked_at=date(2026, 1, 1),
+        ),
+        date(2026, 8, 9),
+    )
+    assert status['found'] is True
+    assert status['current'] is True
+    assert status['membership_expires'] == '2026-12-31'
+    assert status['from_cache'] is True
+
+
+@patch('brevethub.services.registration.models.update_rider_rusa_membership')
+@patch('brevethub.services.registration.lookup_rusa_membership')
+def test_refresh_rusa_membership_persists_new_expiry(mock_lookup, mock_update):
+    mock_lookup.return_value = _current_rusa_lookup(from_cache=False)
+    mock_update.return_value = _rider(
+        rusa_membership_expires=date(2026, 12, 31),
+        rusa_membership_checked_at=date(2026, 8, 9),
+    )
+    rider, status = refresh_rusa_membership(
+        _rider(rusa_membership_expires=date(2025, 12, 31)), force=True)
+    mock_update.assert_called_once()
+    assert status['membership_expires'] == '2026-12-31'

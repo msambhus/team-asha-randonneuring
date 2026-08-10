@@ -1,7 +1,84 @@
 """RUSA ID validator - scrapes RUSA website to validate rider information."""
+from datetime import date
+
+import re
+
 import requests
 from bs4 import BeautifulSoup
-import re
+
+
+_RUSA_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+}
+_MEMBERSEARCH_URL = 'https://rusa.org/cgi-bin/membersearch_PF.pl'
+_EXPIRES_RE = re.compile(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})')
+
+
+def _parse_membership_expires(raw: str | None) -> date | None:
+    """Parse RUSA member-search expiry like ``2026/12/31``."""
+    if not raw:
+        return None
+    match = _EXPIRES_RE.search(str(raw).strip())
+    if not match:
+        return None
+    try:
+        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError:
+        return None
+
+
+def _membership_current(expires: date | None, today: date | None = None) -> bool:
+    today = today or date.today()
+    return expires is not None and expires >= today
+
+
+def get_rusa_membership_status(rusa_id, today: date | None = None):
+    """Look up RUSA membership expiry from RUSA.org member search."""
+    today = today or date.today()
+    base = {
+        'found': False,
+        'rusa_id': str(rusa_id),
+        'rusa_name': None,
+        'city': None,
+        'rusa_club': None,
+        'membership_expires': None,
+        'current': False,
+        'error': None,
+    }
+    try:
+        response = requests.get(
+            _MEMBERSEARCH_URL,
+            params={'mid': rusa_id},
+            headers=_RUSA_HEADERS,
+            timeout=10,
+        )
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        target = str(rusa_id).strip()
+        for row in soup.find_all('tr'):
+            link = row.find('a', href=re.compile(rf'mid={re.escape(target)}\b'))
+            if not link:
+                continue
+            cells = row.find_all('td')
+            if len(cells) < 5:
+                continue
+            name_el = cells[1].find('b') or cells[1]
+            expires = _parse_membership_expires(cells[4].get_text(strip=True))
+            base.update({
+                'found': True,
+                'rusa_name': name_el.get_text(strip=True),
+                'city': cells[2].get_text(strip=True) or None,
+                'rusa_club': cells[3].get_text(strip=True) or None,
+                'membership_expires': expires.isoformat() if expires else None,
+                'current': _membership_current(expires, today),
+                'error': None,
+            })
+            return base
+        return {**base, 'error': f'RUSA ID {rusa_id} not found on RUSA.org'}
+    except requests.RequestException as exc:
+        return {**base, 'error': f'Error connecting to RUSA website: {exc}'}
+    except Exception as exc:
+        return {**base, 'error': f'Error fetching RUSA membership: {exc}'}
 
 
 def normalize_last_name(last_name):
