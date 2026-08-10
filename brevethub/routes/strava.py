@@ -323,7 +323,7 @@ def disconnect():
     else:
         flash('No Strava connection found.', 'info')
 
-    return redirect(url_for('main.dashboard'))
+    return redirect(url_for('main.connections'))
 
 
 # --------------------------------------------------------------------------- #
