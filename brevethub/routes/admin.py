@@ -56,6 +56,14 @@ def _validation_visualization(submission):
     track = []
     distance_m = 0.0
     previous = None
+
+    def geo_distance_m(a_lat, a_lng, b_lat, b_lng):
+        dlat = math.radians(float(b_lat) - float(a_lat))
+        dlng = math.radians(float(b_lng) - float(a_lng))
+        lat1 = math.radians(float(a_lat))
+        lat2 = math.radians(float(b_lat))
+        hav = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng / 2) ** 2
+        return 6371000 * 2 * math.asin(min(1, math.sqrt(hav)))
     for row in raw_track:
         if len(row) < 3:
             continue
@@ -173,9 +181,13 @@ def _validation_visualization(submission):
             # overnight control), so using the last sample in the segment
             # would incorrectly report the departure time as the arrival.
             control_m = end_mi * 1609.344
-            tolerance_m = max(800.0, control_m * 0.002)
+            # Match the activity to the official route coordinate at this
+            # control, as the Team Asha analysis does. Cumulative GPS distance
+            # can keep increasing after a rider reaches a control, especially
+            # during an overnight stop, which otherwise selects the departure.
+            target = min(route, key=lambda p: abs(float(p.get('dist_m') or 0) - control_m))
             nearby = [(i, point) for i, point in enumerate(segment_points)
-                      if abs(point['distance_m'] - control_m) <= tolerance_m]
+                      if geo_distance_m(point['lat'], point['lng'], target['lat'], target['lng']) <= 1000]
             if nearby:
                 arrival_index, arrival_point = min(nearby, key=lambda item: item[1]['timestamp'])
             else:
