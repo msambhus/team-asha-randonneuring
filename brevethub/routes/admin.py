@@ -38,7 +38,7 @@ from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
 from brevethub.shared.weather import fetch_historical_wind, headwind_component
 from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
-    validate_submission,
+    _route_point_for_mile, validate_submission,
 )
 from brevethub.services.registration import progress_label, rider_display_name, status_display_label
 
@@ -185,16 +185,29 @@ def _validation_visualization(submission):
             # control, as the Team Asha analysis does. Cumulative GPS distance
             # can keep increasing after a rider reaches a control, especially
             # during an overnight stop, which otherwise selects the departure.
-            target = min(route, key=lambda p: abs(float(p.get('dist_m') or 0) - control_m))
+            # Use the same route-mile resolver as the validator and allow a
+            # modest GPS/route mismatch (3 km). The first geographic hit is the
+            # arrival; later points at the same control are the departure.
+            target = _route_point_for_mile(route, end_mi)
             nearby = [(i, point) for i, point in enumerate(segment_points)
-                      if geo_distance_m(point['lat'], point['lng'], target['lat'], target['lng']) <= 1000]
+                      if target and geo_distance_m(point['lat'], point['lng'], target['lat'], target['lng']) <= 3000]
             if nearby:
                 arrival_index, arrival_point = min(nearby, key=lambda item: item[1]['timestamp'])
             else:
-                arrival_index, arrival_point = min(
-                    enumerate(segment_points),
-                    key=lambda item: (abs(item[1]['distance_m'] - control_m), item[1]['timestamp']),
-                )
+                # If a recording took a documented detour around the control,
+                # geographic proximity is still a better arrival signal than
+                # cumulative distance (which often lands on the post-stop
+                # departure sample).
+                if target:
+                    arrival_index, arrival_point = min(
+                        enumerate(segment_points),
+                        key=lambda item: (geo_distance_m(item[1]['lat'], item[1]['lng'], target['lat'], target['lng']), item[1]['timestamp']),
+                    )
+                else:
+                    arrival_index, arrival_point = min(
+                        enumerate(segment_points),
+                        key=lambda item: (abs(item[1]['distance_m'] - control_m), item[1]['timestamp']),
+                    )
             elapsed_points = segment_points[:arrival_index + 1]
             elapsed_s = max(0, (arrival_point['timestamp'] - segment_points[0]['timestamp']).total_seconds())
             moving_s = sum(max(0, (b['timestamp'] - a['timestamp']).total_seconds())
