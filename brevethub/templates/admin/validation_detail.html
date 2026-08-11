@@ -5,7 +5,8 @@
   <a href="{{ url_for('admin.validations') }}" class="text-primary">← Validation queue</a>
   <div class="flex justify-between items-start flex-wrap gap-3 mt-2 mb-4">
     <div><h1 class="text-primary text-[1.7rem] font-bold">{{ submission.rider_name }} · {{ submission.event_name|clean_name }}</h1>
-      <p class="text-text-light">{{ submission.event_date }} · {{ submission.distance_km }} km · {{ submission.source_type|replace('_', ' ')|title }}</p></div>
+      <p class="text-text-light">{{ submission.event_date }} · {{ submission.distance_km }} km · {{ submission.source_type|replace('_', ' ')|title }}</p>
+      {% if submission.rwgps_url %}<a href="{{ submission.rwgps_url }}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 mt-1 text-sm font-semibold text-primary">Open official RWGPS route ↗</a>{% endif %}</div>
     <span class="validation-badge validation-{{ submission.organizer_decision or submission.machine_decision }}">{% if submission.organizer_decision == 'approved' %}Organizer approved{% elif submission.organizer_decision %}Organizer: {{ submission.organizer_decision|replace('_', ' ')|title }}{% else %}Automated: {{ submission.machine_decision|replace('_', ' ')|title }}{% endif %}</span>
   </div>
   <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 mb-4 text-blue-950"><strong>Organizer judgment required.</strong> An anomaly is never an automatic disqualification. Consider privacy zones, GPS error, legitimate downhill speed, device failure, road closures, safety detours, and the rider’s explanation.</div>

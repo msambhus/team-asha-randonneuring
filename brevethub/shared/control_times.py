@@ -12,20 +12,26 @@ MILES_TO_KM = 1.609344
 def control_open_time_minutes(distance, distance_unit='miles'):
     """Return official ACP/RUSA opening time from the event start.
 
-    Opening is independent of rider pace: 20 km/h through 200 km, 15 km/h
-    through 600 km, 11.428 km/h through 1,000 km, then 13.333 km/h.
+    Opening uses the ACP/RUSA maximum-speed bands: 34 km/h through 200 km,
+    32 km/h through 400 km, 30 km/h through 600 km, 28 km/h through 1,000 km,
+    then 26 km/h through 1,300 km. These are distinct from the minimum-speed
+    bands used for closing times.
     """
     if distance is None or float(distance) < 0:
         return None
     distance_km = float(distance) if distance_unit == 'km' else float(distance) * MILES_TO_KM
-    if distance_km <= 200:
-        hours = distance_km / 20.0
-    elif distance_km <= 600:
-        hours = 10.0 + ((distance_km - 200.0) / 15.0)
-    elif distance_km <= 1000:
-        hours = 10.0 + (400.0 / 15.0) + ((distance_km - 600.0) / 11.428)
-    else:
-        hours = 10.0 + (400.0 / 15.0) + (400.0 / 11.428) + ((distance_km - 1000.0) / 13.333)
+    bands = ((200.0, 34.0), (400.0, 32.0), (600.0, 30.0),
+             (1000.0, 28.0), (1300.0, 26.0))
+    hours = 0.0
+    previous_km = 0.0
+    for upper_km, speed_kmh in bands:
+        segment_km = max(0.0, min(distance_km, upper_km) - previous_km)
+        hours += segment_km / speed_kmh
+        previous_km = upper_km
+        if distance_km <= upper_km:
+            break
+    if distance_km > previous_km:
+        hours += (distance_km - previous_km) / 26.0
     return round(hours * 60)
 
 
