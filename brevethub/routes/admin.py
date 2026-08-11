@@ -158,30 +158,36 @@ def _validation_visualization(submission):
     power_stream = stream_metrics.get('watts') or []
     time_stream = stream_metrics.get('time') or []
     for stop in plan_bundle.get('stops') or []:
-        # The organizer comparison is control-by-control. Food/water stops are
-        # official controls in the brevet plan and overnight controls must be
-        # retained so arrival time is not confused with departure after sleep.
-        # Navigation waypoints and generated meal rows do not create validation
-        # segments of their own.
-        if str(stop.get('stop_type') or '').lower() not in ('control', 'rest', 'finish'):
+        # Keep this table focused on official controls and the finish. Food,
+        # water, rest, waypoint, and generated meal rows belong in the full
+        # route evidence view, not this control comparison.
+        if str(stop.get('stop_type') or '').lower() not in ('control', 'finish'):
             continue
         end_mi = float(stop.get('distance_miles') or 0)
         start_mi = previous_mi
         previous_mi = end_mi
         segment_points = [p for p in track if start_mi * 1609.344 <= p['distance_m'] <= end_mi * 1609.344]
         if len(segment_points) >= 2:
-            # Use the first sample that reaches the control distance for the
-            # actual arrival. The final sample may be after the rider has
-            # completed the stop and departed again.
+            # Use the earliest sample at the control to represent arrival.
+            # A rider may remain stationary for hours (especially at an
+            # overnight control), so using the last sample in the segment
+            # would incorrectly report the departure time as the arrival.
             control_m = end_mi * 1609.344
-            arrival_index = next((i for i, point in enumerate(segment_points)
-                                  if point['distance_m'] >= control_m), len(segment_points) - 1)
-            arrival_point = segment_points[arrival_index]
+            tolerance_m = max(800.0, control_m * 0.002)
+            nearby = [(i, point) for i, point in enumerate(segment_points)
+                      if abs(point['distance_m'] - control_m) <= tolerance_m]
+            if nearby:
+                arrival_index, arrival_point = min(nearby, key=lambda item: item[1]['timestamp'])
+            else:
+                arrival_index, arrival_point = min(
+                    enumerate(segment_points),
+                    key=lambda item: (abs(item[1]['distance_m'] - control_m), item[1]['timestamp']),
+                )
             elapsed_points = segment_points[:arrival_index + 1]
             elapsed_s = max(0, (arrival_point['timestamp'] - segment_points[0]['timestamp']).total_seconds())
             moving_s = sum(max(0, (b['timestamp'] - a['timestamp']).total_seconds())
                            for a, b in zip(elapsed_points, elapsed_points[1:]) if b.get('speed_mph', 0) >= 1)
-            moving_distance_m = max(0, segment_points[-1]['distance_m'] - segment_points[0]['distance_m'])
+            moving_distance_m = max(0, elapsed_points[-1]['distance_m'] - elapsed_points[0]['distance_m'])
             avg_speed = moving_distance_m / max(1, moving_s) * 2.236936
             actual_elapsed_min = ((arrival_point['timestamp'] - official_start).total_seconds() / 60
                                   if official_start else None)
