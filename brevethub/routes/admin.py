@@ -231,16 +231,18 @@ def _validation_visualization(submission):
         # to the plan's overall climb.  Re-summing the sampled route points here
         # can undercount (or overcount GPS jitter) and made every segment look
         # implausibly easier than the ride-level ft/mi value.  Keep the geometry
-        # calculation as a fallback for legacy plans without ft_per_mi.
-        planned_ft_per_mile = stop.get('ft_per_mi')
-        if planned_ft_per_mile is not None:
-            terrain_ft_per_mile = round(float(planned_ft_per_mile))
+        # calculation as a fallback for legacy plans without persisted segment elevation.
+        segment_elevation_ft = stop.get('elevation_gain')
+        if segment_elevation_ft is not None:
+            segment_elevation_ft = round(float(segment_elevation_ft))
+            terrain_ft_per_mile = round(segment_elevation_ft / max(end_mi - start_mi, 0.1))
         else:
             official_route_segment = [p for p in route
                                       if start_mi * 1609.344 <= float(p.get('dist_m') or 0) <= end_mi * 1609.344]
             route_gain_ft = sum(max(0.0, float(b.get('e_m') or 0) - float(a.get('e_m') or 0))
                                 for a, b in zip(official_route_segment, official_route_segment[1:])) * 3.28084
-            terrain_ft_per_mile = round(route_gain_ft / max(end_mi - start_mi, 0.1)) if len(official_route_segment) >= 2 else 0
+            segment_elevation_ft = round(route_gain_ft)
+            terrain_ft_per_mile = round(segment_elevation_ft / max(end_mi - start_mi, 0.1)) if len(official_route_segment) >= 2 else 0
         segment_rows.append({
             'order': stop.get('stop_order'), 'stop_type': str(stop.get('stop_type') or '').lower(),
             'control': stop.get('location') or stop.get('notes') or 'Control',
@@ -248,6 +250,7 @@ def _validation_visualization(submission):
             'cutoff': fmt_minutes(stop.get('bookend_time_min')),
             'cutoff_pt': fmt_pacific_clock(stop.get('bookend_time_min')),
             'plan_arrival_pt': fmt_pacific_clock(stop.get('arrival_time_min') if stop.get('arrival_time_min') is not None else stop.get('cum_time_min')),
+            'segment_elevation_ft': segment_elevation_ft,
             'ft_per_mile': terrain_ft_per_mile,
             'headwind_mph': round(sum(wind_values) / len(wind_values), 1) if wind_values else None,
             'speed_mph': round(avg_speed, 1) if avg_speed is not None else None,
