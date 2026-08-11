@@ -574,6 +574,17 @@ def build_ride_plan(route_data, controls, *, profile='default',
         raw_segment_gains.append(raw_gain)
         raw_total += raw_gain
 
+    # Scale the raw intervals to the corrected RWGPS climb. Keep a residual on
+    # the final interval so rounded stop values reconcile exactly to the route
+    # total instead of slowly drifting across a long brevet.
+    if raw_total > 0 and corrected_elev_ft > 0:
+        scaled_segment_gains = [int(round(raw * corrected_elev_ft / raw_total))
+                                for raw in raw_segment_gains]
+        if scaled_segment_gains:
+            scaled_segment_gains[-1] += corrected_elev_ft - sum(scaled_segment_gains)
+    else:
+        scaled_segment_gains = raw_segment_gains
+
     # Build stops
     stops = []
     cum_time_min = 0
@@ -588,10 +599,7 @@ def build_ride_plan(route_data, controls, *, profile='default',
         seg_dist = round(dist_miles - prev_dist_miles, 1)
 
         # Scale segment elevation to match RWGPS corrected total
-        if raw_total > 0 and corrected_elev_ft > 0:
-            elev_gain = int(round(raw_segment_gains[i] * corrected_elev_ft / raw_total))
-        else:
-            elev_gain = raw_segment_gains[i]
+        elev_gain = scaled_segment_gains[i]
 
         total_elevation_ft += elev_gain
 

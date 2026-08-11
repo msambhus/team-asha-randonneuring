@@ -144,6 +144,8 @@ def _validation_visualization(submission):
             except (TypeError, ValueError, zlib.error, json.JSONDecodeError):
                 stream_metrics = {}
     previous_mi = 0.0
+    plan_stops = plan_bundle.get('stops') or []
+    plan_total_elevation_ft = (plan_bundle.get('plan') or {}).get('total_elevation_ft')
     event = models.get_brevet_event_full(submission['event_id']) or submission
     official_start = _official_start(event)
 
@@ -226,23 +228,23 @@ def _validation_visualization(submission):
         avg_power = (sum(float(power_stream[i]) for i in stream_values if i < len(power_stream) and power_stream[i] is not None) /
                      max(1, sum(1 for i in stream_values if i < len(power_stream) and power_stream[i] is not None))) if stream_values else None
         wind_values = [s['headwind_mph'] for s in samples if start_mi <= s['distance_mi'] <= end_mi and s.get('headwind_mph') is not None]
-        # Use the persisted plan metric first.  It is derived from the RWGPS
-        # corrected elevation gain and is scaled so the control segments add up
-        # to the plan's overall climb.  Re-summing the sampled route points here
-        # can undercount (or overcount GPS jitter) and made every segment look
-        # implausibly easier than the ride-level ft/mi value.  Keep the geometry
-        # calculation as a fallback for legacy plans without persisted segment elevation.
-        segment_elevation_ft = stop.get('elevation_gain')
-        if segment_elevation_ft is not None:
-            segment_elevation_ft = round(float(segment_elevation_ft))
-            terrain_ft_per_mile = round(segment_elevation_ft / max(end_mi - start_mi, 0.1))
-        else:
-            official_route_segment = [p for p in route
-                                      if start_mi * 1609.344 <= float(p.get('dist_m') or 0) <= end_mi * 1609.344]
-            route_gain_ft = sum(max(0.0, float(b.get('e_m') or 0) - float(a.get('e_m') or 0))
-                                for a, b in zip(official_route_segment, official_route_segment[1:])) * 3.28084
+        # Compute climb from the complete official RWGPS geometry between the
+        # two controls. The persisted stop gain is attached to the prior plan
+        # stop, so using only the control row (or only a rest row) silently drops
+        # control-to-control climbs whenever intermediate stops are present.
+        official_route_segment = [p for p in route
+                                  if start_mi * 1609.344 <= float(p.get('dist_m') or 0) <= end_mi * 1609.344]
+        route_gain_ft = sum(max(0.0, float(b.get('e_m') or 0) - float(a.get('e_m') or 0))
+                            for a, b in zip(official_route_segment, official_route_segment[1:])) * 3.28084
+        if len(official_route_segment) >= 2 and route_gain_ft > 0:
             segment_elevation_ft = round(route_gain_ft)
-            terrain_ft_per_mile = round(segment_elevation_ft / max(end_mi - start_mi, 0.1)) if len(official_route_segment) >= 2 else 0
+        else:
+            # Legacy plans may not have a complete route track. In that case,
+            # include every persisted stop in this interval as a safe fallback.
+            interval_stops = [s for s in plan_stops
+                              if start_mi < float(s.get('distance_miles') or 0) <= end_mi + 0.05]
+            segment_elevation_ft = round(sum(float(s.get('elevation_gain') or 0) for s in interval_stops))
+        terrain_ft_per_mile = round(segment_elevation_ft / max(end_mi - start_mi, 0.1))
         segment_rows.append({
             'order': stop.get('stop_order'), 'stop_type': str(stop.get('stop_type') or '').lower(),
             'control': stop.get('location') or stop.get('notes') or 'Control',
@@ -261,6 +263,32 @@ def _validation_visualization(submission):
             'power': round(avg_power) if avg_power is not None else None,
             'actual_bank': fmt_minutes(float(stop.get('bookend_time_min')) - actual_elapsed_min) if actual_elapsed_min is not None and stop.get('bookend_time_min') is not None else '—',
         })
+    # Sanity check the displayed control intervals against the persisted route
+    # total.  Rounding should be only a few feet; a larger mismatch means an old
+    # plan omitted intermediate stop intervals.  Normalize the displayed rows so
+    # the segment column always reconciles to the ride-level climb.
+    if plan_total_elevation_ft and segment_rows:
+        expected_total = round(float(plan_total_elevation_ft))
+        displayed_total = sum(int(row.get('segment_elevation_ft') or 0) for row in segment_rows)
+        if displayed_total and abs(displayed_total - expected_total) > 1:
+            ratio = expected_total / displayed_total
+            for row in segment_rows:
+                row['segment_elevation_ft'] = round((row.get('segment_elevation_ft') or 0) * ratio)
+                row['ft_per_mile'] = round(row['segment_elevation_ft'] / max(row['segment_mi'], 0.1))
+            residual = expected_total - sum(int(row.get('segment_elevation_ft') or 0) for row in segment_rows)
+            segment_rows[-1]['segment_elevation_ft'] += residual
+            segment_rows[-1]['ft_per_mile'] = round(segment_rows[-1]['segment_elevation_ft'] / max(segment_rows[-1]['segment_mi'], 0.1))
+        elif not displayed_total and expected_total > 0:
+            # If neither geometry nor legacy stop rows had usable elevation,
+            # preserve the route total by distributing it over the intervals.
+            total_miles = sum(float(row.get('segment_mi') or 0) for row in segment_rows)
+            if total_miles > 0:
+                for row in segment_rows:
+                    row['segment_elevation_ft'] = round(expected_total * float(row['segment_mi']) / total_miles)
+                    row['ft_per_mile'] = round(row['segment_elevation_ft'] / max(row['segment_mi'], 0.1))
+                residual = expected_total - sum(int(row.get('segment_elevation_ft') or 0) for row in segment_rows)
+                segment_rows[-1]['segment_elevation_ft'] += residual
+                segment_rows[-1]['ft_per_mile'] = round(segment_rows[-1]['segment_elevation_ft'] / max(segment_rows[-1]['segment_mi'], 0.1))
     # Leave a predictable plot box for the organizer chart: the template adds
     # a 76px left gutter for labels and a small top gutter for the title.
     chart_w, chart_h = 974, 282
