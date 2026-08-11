@@ -872,6 +872,7 @@ def analysis_detail(activity_id):
             current_app.logger.warning(
                 'analysis detail: route explorer build failed for %s: %s',
                 activity_id, e)
+        context.setdefault('mapbox_token', current_app.config.get('MAPBOX_ACCESS_TOKEN', ''))
         return render_template(
             'strava_ride_analysis.html',
             **context,

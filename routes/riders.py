@@ -1756,6 +1756,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                            garmin_recovery=garmin_recovery,
                            strava_recordings=strava_recordings,
                            strava_split_summary=strava_split_summary,
+                           mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN', ''),
                            provider_comparison=provider_comparison)
 
 

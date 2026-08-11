@@ -598,7 +598,8 @@ def validation_detail(submission_id):
     return render_template('admin/validation_detail.html', submission=submission,
                            checks=models.get_validation_checks(submission_id),
                            evidence=models.get_validation_evidence(submission_id),
-                           visualization=_validation_visualization(submission))
+                           visualization=_validation_visualization(submission),
+                           mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN', ''))
 
 
 @admin_bp.route('/validations/<int:submission_id>/evidence/<int:evidence_id>', methods=['GET'])
