@@ -33,6 +33,7 @@ from flask import (Blueprint, abort, current_app, flash, redirect,
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
 from brevethub.shared.operations_status import route_plan_status
+from brevethub.shared.control_times import control_open_time_minutes
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
 from brevethub.shared.weather import fetch_historical_wind, headwind_component
@@ -251,7 +252,7 @@ def _validation_visualization(submission):
             'distance_mi': round(end_mi, 1), 'segment_mi': round(max(0, end_mi - start_mi), 1),
             'cutoff': fmt_minutes(stop.get('bookend_time_min')),
             'cutoff_pt': fmt_pacific_clock(stop.get('bookend_time_min')),
-            'plan_arrival_pt': fmt_pacific_clock(stop.get('arrival_time_min') if stop.get('arrival_time_min') is not None else stop.get('cum_time_min')),
+            'open_pt': fmt_pacific_clock(control_open_time_minutes(end_mi)),
             'segment_elevation_ft': segment_elevation_ft,
             'ft_per_mile': terrain_ft_per_mile,
             'headwind_mph': round(sum(wind_values) / len(wind_values), 1) if wind_values else None,

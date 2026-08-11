@@ -9,6 +9,26 @@ canonical overall cutoff.
 MILES_TO_KM = 1.609344
 
 
+def control_open_time_minutes(distance, distance_unit='miles'):
+    """Return official ACP/RUSA opening time from the event start.
+
+    Opening is independent of rider pace: 20 km/h through 200 km, 15 km/h
+    through 600 km, 11.428 km/h through 1,000 km, then 13.333 km/h.
+    """
+    if distance is None or float(distance) < 0:
+        return None
+    distance_km = float(distance) if distance_unit == 'km' else float(distance) * MILES_TO_KM
+    if distance_km <= 200:
+        hours = distance_km / 20.0
+    elif distance_km <= 600:
+        hours = 10.0 + ((distance_km - 200.0) / 15.0)
+    elif distance_km <= 1000:
+        hours = 10.0 + (400.0 / 15.0) + ((distance_km - 600.0) / 11.428)
+    else:
+        hours = 10.0 + (400.0 / 15.0) + (400.0 / 11.428) + ((distance_km - 1000.0) / 13.333)
+    return round(hours * 60)
+
+
 def control_close_time_minutes(distance, total_distance, cutoff_hours,
                                event_distance_km=None, distance_unit='miles'):
     """Return the advisory control closing time in minutes from the start.
