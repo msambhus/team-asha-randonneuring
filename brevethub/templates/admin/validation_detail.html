@@ -52,4 +52,27 @@ const track=visualization.track||{{ submission.normalized_track|tojson }};if(tra
 const checks={{ checks|tojson }};checks.forEach(c=>(c.map_segments||[]).forEach(seg=>{if(seg.length){L.polyline(seg,{color:c.result==='incomplete'?'#dc2626':'#f97316',weight:6,opacity:.85}).bindTooltip(c.title+': '+c.summary).addTo(map);bounds.push(...seg)}}));if(bounds.length)map.fitBounds(bounds,{padding:[20,20]});else map.setView([39,-98],4);
 const samples=visualization.samples||[];let chartMarker;if(samples.length){chartMarker=L.circleMarker([samples[0].lat,samples[0].lng],{radius:8,color:'#dc2626',fillColor:'#fca5a5',fillOpacity:.95,weight:3}).bindTooltip('Chart position').addTo(map);const hover=document.getElementById('validation-chart-hover');const cursor=document.getElementById('validation-chart-cursor');const tooltip=document.getElementById('validation-chart-tooltip');const chartWidth=974;const maxDistance=Math.max(...samples.map(s=>Number(s.distance_mi)||0),1);hover?.addEventListener('mousemove',event=>{const rect=hover.getBoundingClientRect();const x=Math.max(0,Math.min(chartWidth,(event.clientX-rect.left)/rect.width*chartWidth));const target=x/chartWidth*maxDistance;let nearest=samples[0];for(const sample of samples){if(Math.abs(sample.distance_mi-target)<Math.abs(nearest.distance_mi-target))nearest=sample;}chartMarker.setLatLng([nearest.lat,nearest.lng]);cursor?.setAttribute('x1',String(76+x));cursor?.setAttribute('x2',String(76+x));cursor?.setAttribute('visibility','visible');if(tooltip){const wind=nearest.headwind_mph==null?'Unavailable':`${Number(nearest.headwind_mph).toFixed(1)} mph`;tooltip.innerHTML=`<strong>${Number(nearest.distance_mi).toFixed(1)} mi</strong><br><span style="color:#93c5fd">Speed</span> ${Number(nearest.speed_mph||0).toFixed(1)} mph<br><span style="color:#86efac">Elevation</span> ${Number(nearest.elevation_ft||0).toFixed(0)} ft<br><span style="color:#fdba74">Headwind</span> ${wind}<br>Grade ${Number(nearest.grade||0).toFixed(1)}%${nearest.anomaly?`<br><span style="color:#fca5a5">Flagged: ${nearest.anomaly}</span>`:''}`;tooltip.style.display='block';const left=Math.min(Math.max(8,event.clientX-rect.left+12),rect.width-tooltip.offsetWidth-8);tooltip.style.left=`${left}px`;tooltip.style.top=`${Math.max(8,event.clientY-rect.top-tooltip.offsetHeight-12)}px`;}});hover?.addEventListener('mouseleave',()=>{cursor?.setAttribute('visibility','hidden');if(tooltip)tooltip.style.display='none';});}
 </script>{% endif %}
+<script>
+// The control-window column is an official opening-to-cutoff window.  Keep
+// planned ETA out of this evidence table; it is a rider pacing estimate, not
+// the RUSA/ACP opening time.
+(() => {
+  const rows = {{ visualization.segments|tojson }};
+  const table = document.querySelector('.validation-performance-table');
+  if (!table) return;
+  const header = table.querySelector('thead th:nth-child(2)');
+  if (header) header.textContent = 'Control open → cutoff (PT)';
+  table.querySelectorAll('tbody tr').forEach((tr, i) => {
+    const row = rows[i];
+    const cell = tr.children[1];
+    if (row && cell) cell.textContent = `${row.open_pt || '—'} → ${row.cutoff_pt || '—'}`;
+  });
+})();
+</script>
+<style>
+.validation-performance-table{table-layout:fixed}
+.validation-performance-table th:first-child,.validation-performance-table td:first-child{width:27%;max-width:27%}
+.validation-performance-table td:first-child strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.validation-performance-table th:nth-child(2),.validation-performance-table td:nth-child(2){width:18%;max-width:18%}
+</style>
 {% endblock %}
