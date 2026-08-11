@@ -533,7 +533,15 @@
 
         map = new mapboxgl.Map({
             container: 'wind-map',
-            style: 'mapbox://styles/mapbox/streets-v12',
+            style: 'mapbox://styles/mapbox/standard',
+            config: { basemap: {
+                lightPreset: 'day',
+                theme: 'default',
+                show3dObjects: false,
+                showPointOfInterestLabels: true,
+                showRoadLabels: true,
+                showPlaceLabels: true
+            } },
             bounds: (function() {
                 var b = new mapboxgl.LngLatBounds();
                 data.polyline.forEach(function(p) { b.extend([p[1], p[0]]); });
@@ -554,6 +562,12 @@
 
         // Re-add layers after style change
         map.on('style.load', function() {
+            if (map.getStyle() && map.getStyle().imports) {
+                try {
+                    map.setConfigProperty('basemap', 'lightPreset', 'day');
+                    map.setConfigProperty('basemap', 'show3dObjects', false);
+                } catch (e) { /* classic styles do not expose Standard config */ }
+            }
             if (currentMapData) {
                 addAllLayers(currentMapData);
             }
@@ -1061,7 +1075,15 @@
             leg.polyline.forEach(function(p) { bounds.extend([p[1], p[0]]); });
             var exportMap = new mapboxgl.Map({
                 container: holder,
-                style: 'mapbox://styles/mapbox/streets-v12',
+                style: 'mapbox://styles/mapbox/standard',
+                config: { basemap: {
+                    lightPreset: 'day',
+                    theme: 'default',
+                    show3dObjects: false,
+                    showPointOfInterestLabels: true,
+                    showRoadLabels: true,
+                    showPlaceLabels: true
+                } },
                 bounds: bounds,
                 fitBoundsOptions: { padding: 42 },
                 preserveDrawingBuffer: true,
