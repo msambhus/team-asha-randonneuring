@@ -226,13 +226,24 @@ def _validation_visualization(submission):
         avg_power = (sum(float(power_stream[i]) for i in stream_values if i < len(power_stream) and power_stream[i] is not None) /
                      max(1, sum(1 for i in stream_values if i < len(power_stream) and power_stream[i] is not None))) if stream_values else None
         wind_values = [s['headwind_mph'] for s in samples if start_mi <= s['distance_mi'] <= end_mi and s.get('headwind_mph') is not None]
-        official_route_segment = [p for p in route
-                                  if start_mi * 1609.344 <= float(p.get('dist_m') or 0) <= end_mi * 1609.344]
-        route_gain_ft = sum(max(0.0, float(b.get('e_m') or 0) - float(a.get('e_m') or 0))
-                            for a, b in zip(official_route_segment, official_route_segment[1:])) * 3.28084
-        terrain_ft_per_mile = round(route_gain_ft / max(end_mi - start_mi, 0.1)) if len(official_route_segment) >= 2 else round(float(stop.get('ft_per_mi') or 0))
+        # Use the persisted plan metric first.  It is derived from the RWGPS
+        # corrected elevation gain and is scaled so the control segments add up
+        # to the plan's overall climb.  Re-summing the sampled route points here
+        # can undercount (or overcount GPS jitter) and made every segment look
+        # implausibly easier than the ride-level ft/mi value.  Keep the geometry
+        # calculation as a fallback for legacy plans without ft_per_mi.
+        planned_ft_per_mile = stop.get('ft_per_mi')
+        if planned_ft_per_mile is not None:
+            terrain_ft_per_mile = round(float(planned_ft_per_mile))
+        else:
+            official_route_segment = [p for p in route
+                                      if start_mi * 1609.344 <= float(p.get('dist_m') or 0) <= end_mi * 1609.344]
+            route_gain_ft = sum(max(0.0, float(b.get('e_m') or 0) - float(a.get('e_m') or 0))
+                                for a, b in zip(official_route_segment, official_route_segment[1:])) * 3.28084
+            terrain_ft_per_mile = round(route_gain_ft / max(end_mi - start_mi, 0.1)) if len(official_route_segment) >= 2 else 0
         segment_rows.append({
-            'order': stop.get('stop_order'), 'control': stop.get('location') or stop.get('notes') or 'Control',
+            'order': stop.get('stop_order'), 'stop_type': str(stop.get('stop_type') or '').lower(),
+            'control': stop.get('location') or stop.get('notes') or 'Control',
             'distance_mi': round(end_mi, 1), 'segment_mi': round(max(0, end_mi - start_mi), 1),
             'cutoff': fmt_minutes(stop.get('bookend_time_min')),
             'cutoff_pt': fmt_pacific_clock(stop.get('bookend_time_min')),
