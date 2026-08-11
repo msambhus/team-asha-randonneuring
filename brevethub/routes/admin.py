@@ -158,10 +158,12 @@ def _validation_visualization(submission):
     power_stream = stream_metrics.get('watts') or []
     time_stream = stream_metrics.get('time') or []
     for stop in plan_bundle.get('stops') or []:
-        # The organizer comparison is control-by-control. Rest stops and
-        # waypoints are useful in the full plan, but do not create validation
+        # The organizer comparison is control-by-control. Food/water stops are
+        # official controls in the brevet plan and overnight controls must be
+        # retained so arrival time is not confused with departure after sleep.
+        # Navigation waypoints and generated meal rows do not create validation
         # segments of their own.
-        if str(stop.get('stop_type') or '').lower() != 'control':
+        if str(stop.get('stop_type') or '').lower() not in ('control', 'rest', 'finish'):
             continue
         end_mi = float(stop.get('distance_miles') or 0)
         start_mi = previous_mi
