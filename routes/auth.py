@@ -110,15 +110,20 @@ def google_callback():
         if not user['profile_completed']:
             return redirect(url_for('auth.setup_profile'))
         
-        # Store rider_id in session for convenience
+        # Store rider info in session for convenience
         if user['rider_id']:
             session['rider_id'] = user['rider_id']
-            rider = models.get_rider_by_rusa(
-                models._execute("SELECT rusa_id FROM rider WHERE id = %s", 
-                               (user['rider_id'],)).fetchone()['rusa_id']
-            )
-            session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
-            session['rider_rusa_id'] = rider['rusa_id']
+            try:
+                rusa_row = models._execute(
+                    "SELECT rusa_id, first_name, last_name FROM rider WHERE id = %s",
+                    (user['rider_id'],)
+                ).fetchone()
+                if rusa_row:
+                    session['rider_name'] = f"{rusa_row['first_name']} {rusa_row['last_name']}"
+                    if rusa_row['rusa_id']:
+                        session['rider_rusa_id'] = rusa_row['rusa_id']
+            except Exception:
+                pass  # rider_rusa_id will be backfilled by the context processor
         
         flash('Successfully logged in!', 'success')
         
@@ -239,7 +244,8 @@ def setup_profile():
         # Update session
         session['rider_id'] = rider['id']
         session['rider_name'] = f"{rider['first_name']} {rider['last_name']}"
-        session['rider_rusa_id'] = rider['rusa_id']
+        if rider.get('rusa_id'):
+            session['rider_rusa_id'] = rider['rusa_id']
         
         flash(f'Welcome, {rider["first_name"]}! Your profile has been set up successfully.', 'success')
         

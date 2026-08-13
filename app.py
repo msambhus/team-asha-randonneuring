@@ -111,7 +111,21 @@ def create_app():
 
     @app.context_processor
     def inject_helpers():
-        from models import get_all_seasons, get_current_season
+        from models import get_all_seasons, get_current_season, _execute
+
+        # Backfill rider_rusa_id into session if missing (isolated so it never breaks page render)
+        rider_rusa_id = session.get('rider_rusa_id')
+        if rider_rusa_id is None and session.get('rider_id'):
+            try:
+                row = _execute(
+                    "SELECT rusa_id FROM rider WHERE id = %s", (session['rider_id'],)
+                ).fetchone()
+                if row and row['rusa_id']:
+                    rider_rusa_id = row['rusa_id']
+                    session['rider_rusa_id'] = rider_rusa_id
+            except Exception:
+                pass
+
         try:
             # Note: get_all_seasons() and get_current_season() are cached at the model level
             return dict(
@@ -120,7 +134,7 @@ def create_app():
                 user_logged_in=session.get('user_id') is not None,
                 user_email=session.get('email'),
                 rider_name=session.get('rider_name'),
-                rider_rusa_id=session.get('rider_rusa_id'),
+                rider_rusa_id=rider_rusa_id,
             )
         except Exception:
             # Return mock data if database is not available
