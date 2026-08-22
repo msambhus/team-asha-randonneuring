@@ -1,249 +1,103 @@
 {% extends "base.html" %}
-{% block title %}Home - Team Asha Randonneuring{% endblock %}
+{% block title %}Team Asha Randonneuring{% endblock %}
+{% block meta_description %}Team Asha Randonneuring is a Bay Area cycling community exploring long-distance brevets and supporting education in India.{% endblock %}
 
 {% block extra_head %}
 <style>
-/* Animated gradient background */
-.hero-gradient-bg {
-    position: absolute;
-    top: -50%;
-    left: -50%;
-    right: -50%;
-    bottom: -50%;
-    background: linear-gradient(45deg,
-        rgba(26, 54, 93, 0.8),
-        rgba(42, 74, 127, 0.6),
-        rgba(26, 54, 93, 0.8),
-        rgba(42, 74, 127, 0.6)
-    );
-    background-size: 400% 400%;
-    animation: gradientShift 15s ease infinite;
-    z-index: 1;
-}
-
-@keyframes gradientShift {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-}
-
-/* Photo glow effect */
-.hero-photo-glow {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 380px;
-    height: 270px;
-    background: radial-gradient(circle, rgba(252, 129, 129, 0.3), transparent 70%);
-    border-radius: 12px;
-    animation: pulseGlow 3s ease-in-out infinite;
-    z-index: 0;
-}
-
-@keyframes pulseGlow {
-    0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
-    50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.05); }
-}
-
-/* Hero photo hover effect */
-.hero-photo {
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.hero-photo:hover {
-    transform: scale(1.02);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
-}
-
-/* Title entrance animation */
-.hero-title {
-    opacity: 0;
-    animation: fadeInUp 0.8s ease forwards 0.2s;
-}
-
-.hero-description {
-    opacity: 0;
-    animation: fadeInUp 0.8s ease forwards 0.4s;
-}
-
-.hero-goal {
-    opacity: 0;
-    animation: fadeInUp 0.8s ease forwards 0.6s;
-}
-
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 0.9;
-        transform: translateY(0);
-    }
-}
-
-/* Parallax effect (applied via JavaScript) */
-.hero-content {
-    transition: transform 0.1s ease-out;
-}
-
+.public-hero { background: linear-gradient(135deg, #102a4c 0%, #1a365d 58%, #2a4a7f 100%); }
+.public-hero-image { min-height: 280px; background-position: center; }
+.story-card { transition: transform .2s ease, box-shadow .2s ease; }
+.story-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(26,54,93,.12); }
+@media (prefers-reduced-motion: reduce) { .story-card { transition: none; } }
 </style>
 {% endblock %}
 
 {% block content %}
+{% if not user_logged_in %}
+<section class="public-hero text-white px-5 py-12 md:py-16">
+    <div class="max-w-[1180px] mx-auto grid md:grid-cols-[1.05fr_.95fr] gap-10 items-center">
+        <div>
+            <p class="uppercase tracking-[.18em] text-xs font-bold text-accent-light mb-4">Bay Area · Long distance · Community</p>
+            <h1 class="text-4xl md:text-6xl font-extrabold leading-tight mb-5">Ride farther.<br><span class="text-accent-light">Give back.</span></h1>
+            <p class="text-lg md:text-xl text-white/85 leading-relaxed max-w-[600px]">Team Asha is a community of cyclists who find joy in the quiet determination of randonneuring—and use every mile to support education for children in India.</p>
+            <div class="flex flex-wrap gap-3 mt-7">
+                <a href="{{ url_for('auth.login') }}" class="inline-flex items-center rounded-lg bg-white text-primary px-5 py-3 font-bold no-underline hover:bg-white/90">Join the community</a>
+                <a href="{{ url_for('main.about') }}" class="inline-flex items-center rounded-lg border border-white/40 text-white px-5 py-3 font-semibold no-underline hover:bg-white/10">Learn about randonneuring</a>
+            </div>
+        </div>
+        <figure class="m-0 rounded-2xl overflow-hidden shadow-2xl border border-white/20">
+            <img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders together outdoors" class="public-hero-image w-full object-cover">
+            <figcaption class="bg-black/25 px-4 py-3 text-sm text-white/80">A team built around shared roads, shared effort, and shared purpose.</figcaption>
+        </figure>
+    </div>
+</section>
+
+<section class="max-w-[1100px] mx-auto px-5 py-12 md:py-16">
+    <div class="max-w-[720px] mb-9">
+        <p class="text-accent font-bold uppercase tracking-wider text-xs">The sport</p>
+        <h2 class="text-3xl md:text-4xl text-primary font-extrabold mt-2 mb-4">What is randonneuring?</h2>
+        <p class="text-lg leading-relaxed text-text-light">Randonneuring is long-distance cycling built around self-reliance, navigation, and camaraderie. Riders complete timed <strong>brevets</strong>—usually 200, 300, 400, or 600 kilometers—stopping at controls along the way. It is not a race; everyone rides their own ride, and the finish line is earned one choice at a time.</p>
+    </div>
+    <div class="grid md:grid-cols-3 gap-5">
+        <article class="story-card bg-card-bg rounded-xl border border-border p-6 shadow-sm">
+            <div class="text-3xl mb-3">🧭</div><h3 class="text-primary text-xl font-bold mb-2">Adventure with intention</h3>
+            <p class="text-text-light">Long roads, early starts, changing weather, and the satisfaction of solving the route together.</p>
+        </article>
+        <article class="story-card bg-card-bg rounded-xl border border-border p-6 shadow-sm">
+            <div class="text-3xl mb-3">🤝</div><h3 class="text-primary text-xl font-bold mb-2">A welcoming peloton</h3>
+            <p class="text-text-light">Experienced randonneurs and curious newcomers share knowledge, encouragement, and good food at controls.</p>
+        </article>
+        <article class="story-card bg-card-bg rounded-xl border border-border p-6 shadow-sm">
+            <div class="text-3xl mb-3">📚</div><h3 class="text-primary text-xl font-bold mb-2">Miles that matter</h3>
+            <p class="text-text-light">Team Asha supports <a href="https://ashanet.org" target="_blank" rel="noopener" class="text-primary font-semibold">Asha for Education</a> and its work toward education for underprivileged children in India.</p>
+        </article>
+    </div>
+</section>
+
+<section class="bg-[#edf3fa] px-5 py-12">
+    <div class="max-w-[1100px] mx-auto grid md:grid-cols-[.9fr_1.1fr] gap-8 items-center">
+        <div>
+            <p class="text-accent font-bold uppercase tracking-wider text-xs">More than a finish</p>
+            <h2 class="text-3xl text-primary font-extrabold mt-2 mb-4">Find your next long day</h2>
+            <p class="leading-relaxed text-text-light">Whether you are preparing for your first 200K or building toward Paris-Brest-Paris, Team Asha is a place to learn, plan, and keep rolling.</p>
+            <a href="{{ url_for('main.about') }}" class="inline-block mt-5 text-primary font-bold no-underline hover:underline">Meet Team Asha and see how it works →</a>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+            {% for photo, name in [('riders/Shriram.jpg', 'The people'), ('riders/Sriharsha.jpg', 'The persistence'), ('riders/Vijayshree.jpg', 'The joy')] %}
+            <figure class="m-0 rounded-xl overflow-hidden bg-white shadow-sm">
+                <img src="{{ url_for('static', filename=photo) }}" alt="Team Asha rider — {{ name }}" class="w-full aspect-square object-cover">
+                <figcaption class="text-center text-xs font-semibold text-primary py-2">{{ name }}</figcaption>
+            </figure>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% else %}
 <div class="hero-section relative overflow-hidden bg-gradient-to-br from-primary via-primary-dark to-primary text-white py-8 px-5 text-center">
-    <!-- Animated gradient background -->
-    <div class="hero-gradient-bg"></div>
-
     <div class="hero-content relative z-10 flex flex-col md:flex-row items-center justify-center gap-8 flex-wrap max-w-[1100px] mx-auto">
-        <!-- Team photo with overlay effects -->
-        <div class="hero-photo-wrapper relative">
-            <div class="hero-photo-glow"></div>
-            <img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders" class="hero-photo w-full max-w-[360px] h-auto aspect-[360/250] object-cover rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.3)] relative z-10">
-        </div>
-
-        <!-- Hero text with animations -->
-        <div class="hero-text text-center md:text-left max-w-[500px]">
-            <h1 class="hero-title text-[2rem] mb-2 font-extrabold" style="text-shadow: 2px 2px 8px rgba(0,0,0,0.4);">
-                Team <span class="text-accent-light">Asha</span> Randonneuring
-            </h1>
-            <p class="hero-description text-[0.95rem] opacity-90 mb-2.5" style="text-shadow: 1px 1px 4px rgba(0,0,0,0.3);">
-                Bay Area cyclists pushing boundaries through ultra-distance randonneuring to raise funds for underprivileged children's education in India.
-            </p>
-            <p class="hero-goal text-[0.9rem] opacity-85" style="text-shadow: 1px 1px 4px rgba(0,0,0,0.3);">
-                <strong>Building toward <a href="https://www.paris-brest-paris.org/en/" target="_blank" class="text-accent-light hover:underline transition-all">Paris-Brest-Paris 2027</a></strong></p>
-        </div>
+        <div class="relative"><img src="{{ url_for('static', filename='team_photo.jpg') }}" alt="Team Asha riders" class="w-full max-w-[360px] h-auto aspect-[360/250] object-cover rounded-xl shadow-lg"></div>
+        <div class="text-center md:text-left max-w-[500px]"><h1 class="text-[2rem] mb-2 font-extrabold">Team <span class="text-accent-light">Asha</span> Randonneuring</h1><p class="text-[.95rem] opacity-90 mb-2.5">Bay Area cyclists pushing boundaries through ultra-distance randonneuring to raise funds for underprivileged children's education in India.</p><p class="text-[.9rem] opacity-85"><strong>Building toward <a href="https://www.paris-brest-paris.org/en/" target="_blank" class="text-accent-light hover:underline">Paris-Brest-Paris 2027</a></strong></p></div>
     </div>
 </div>
 
 <div class="stats-row">
-<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
-    <div class="text-[2.2rem] font-extrabold text-primary stat-number" data-target="{{ stats.riders }}">0</div>
-    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Riders</div>
-</div>
-<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
-    <div class="text-[2.2rem] font-extrabold text-primary stat-number" data-target="{{ stats.rides }}">0</div>
-    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Brevet Rides</div>
-</div>
-<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
-    <div class="text-[2.2rem] font-extrabold text-primary stat-number" data-target="{{ stats.kms }}">0</div>
-    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Brevet KMs</div>
-</div>
-<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border">
-    <div class="text-[2.2rem] font-extrabold text-primary stat-number" data-target="{{ stats.srs }}">0</div>
-    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">All-Time Super Randonneurs</div>
-</div>
-<div class="bg-card-bg rounded-xl p-6 text-center shadow-[0_4px_15px_rgba(0,0,0,0.08)] border border-border hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] transition-all">
-    <div class="text-[1.6rem] font-extrabold text-primary"><a href="https://www.paris-brest-paris.org/en/" target="_blank" class="text-inherit no-underline">PBP 2027</a></div>
-    <div class="text-[0.85rem] text-text-light uppercase tracking-wider mt-1">Next Goal</div>
-    <div class="text-[0.7rem] text-text-light mt-0.5">Aug 17&ndash;21, 2027</div>
-</div>
-</div>
-
-<div class="max-w-[1200px] mx-auto px-5 py-10">
-<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border mb-5 fade-in-up">
-<h2 class="text-[1.6rem] mb-5 text-primary pb-2.5 border-b-[3px] border-accent inline-block">What is Randonneuring?</h2>
-<p class="mt-4">Randonneuring is a long-distance cycling sport where riders complete timed courses called <strong>brevets</strong>. Starting at 200km and progressing through 300km, 400km, 600km, and beyond, riders must finish within strict time limits while navigating through checkpoints called controls. It's not a race &mdash; it's a test of endurance, self-reliance, and determination.</p>
-<p class="mt-2.5"><a href="{{ url_for('main.about') }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">Learn more about randonneuring &rarr;</a></p>
-</div>
-
-<div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-5">
-{% for ss in season_summaries %}
-<div class="bg-card-bg rounded-xl p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-border stagger-item">
-<h3 class="text-primary mb-2.5">{{ ss.name }} Season</h3>
-{% if ss.is_current %}
-<p>Our current season is live&mdash;riders are qualifying for <strong>Paris-Brest-Paris 2027</strong>.</p>
-{% else %}
-<p>{{ ss.active_riders }} riders completed {{ ss.total_rides }} brevets covering {{ ss.total_kms|commafy }} km.{% if ss.sr_rider_count > 0 %} {{ ss.sr_rider_count }} Super Randonneurs.{% endif %}</p>
-{% endif %}
-<p class="mt-2.5"><a href="{{ url_for('riders.season_riders', season_name=ss.name) }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">View {{ ss.name[:4] }}/{{ ss.name[5:] }} season &rarr;</a></p>
-</div>
+{% for value, label in [(stats.riders, 'All-Time Riders'), (stats.rides, 'All-Time Brevet Rides'), (stats.kms, 'All-Time Brevet KMs'), (stats.srs, 'All-Time Super Randonneurs')] %}
+<div class="bg-card-bg rounded-xl p-6 text-center shadow-sm border border-border"><div class="text-[2.2rem] font-extrabold text-primary stat-number" data-target="{{ value }}">0</div><div class="text-[.85rem] text-text-light uppercase tracking-wider mt-1">{{ label }}</div></div>
 {% endfor %}
+<div class="bg-card-bg rounded-xl p-6 text-center shadow-sm border border-border"><div class="text-[1.6rem] font-extrabold text-primary"><a href="https://www.paris-brest-paris.org/en/" target="_blank" class="text-inherit no-underline">PBP 2027</a></div><div class="text-[.85rem] text-text-light uppercase tracking-wider mt-1">Next Goal</div><div class="text-[.7rem] text-text-light mt-0.5">Aug 17–21, 2027</div></div>
 </div>
+<div class="max-w-[1200px] mx-auto px-5 py-10">
+    <div class="bg-card-bg rounded-xl p-6 shadow-sm border border-border mb-5"><h2 class="text-[1.6rem] mb-5 text-primary pb-2.5 border-b-[3px] border-accent inline-block">What is Randonneuring?</h2><p class="mt-4">Randonneuring is a long-distance cycling sport where riders complete timed courses called <strong>brevets</strong>. Starting at 200km and progressing through 300km, 400km, 600km, and beyond, riders must finish within strict time limits while navigating through checkpoints called controls. It’s not a race—it’s a test of endurance, self-reliance, and determination.</p><p class="mt-2.5"><a href="{{ url_for('main.about') }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">Learn more about randonneuring →</a></p></div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-5">{% for ss in season_summaries %}<div class="bg-card-bg rounded-xl p-6 shadow-sm border border-border"><h3 class="text-primary mb-2.5">{{ ss.name }} Season</h3>{% if ss.is_current %}<p>Our current season is live—riders are qualifying for <strong>Paris-Brest-Paris 2027</strong>.</p>{% else %}<p>{{ ss.active_riders }} riders completed {{ ss.total_rides }} brevets covering {{ ss.total_kms|commafy }} km.{% if ss.sr_rider_count > 0 %} {{ ss.sr_rider_count }} Super Randonneurs.{% endif %}</p>{% endif %}<p class="mt-2.5"><a href="{{ url_for('riders.season_riders', season_name=ss.name) }}" class="text-primary no-underline font-semibold hover:text-accent hover:underline">View {{ ss.name[:4] }}/{{ ss.name[5:] }} season →</a></p></div>{% endfor %}</div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
+{% if user_logged_in %}
 <script>
-// Animated counter for statistics
-function animateCounter(element, target, duration = 400) {
-    const start = 0;
-    const increment = target / (duration / 16); // 60fps
-    let current = 0;
-
-    const updateCounter = () => {
-        current += increment;
-        if (current < target) {
-            // Format number with commas if it's large
-            const displayValue = Math.floor(current);
-            element.textContent = displayValue.toLocaleString();
-            requestAnimationFrame(updateCounter);
-        } else {
-            // Ensure we end at exact target value
-            element.textContent = target.toLocaleString();
-        }
-    };
-
-    requestAnimationFrame(updateCounter);
-}
-
-// Intersection Observer to trigger animation when stats come into view
-const observerOptions = {
-    threshold: 0.3,
-    rootMargin: '0px'
-};
-
-const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting && !entry.target.classList.contains('animated')) {
-            entry.target.classList.add('animated');
-            const statCards = entry.target.querySelectorAll('.stat-number');
-
-            statCards.forEach(card => {
-                const target = parseInt(card.getAttribute('data-target'));
-                animateCounter(card, target);
-            });
-
-            // Unobserve after animation
-            observer.unobserve(entry.target);
-        }
-    });
-}, observerOptions);
-
-// Subtle parallax effect for hero section
-document.addEventListener('DOMContentLoaded', function() {
-    // Start observing stats for counter animation
-    const statsContainer = document.querySelector('.stats-row');
-    if (statsContainer) {
-        observer.observe(statsContainer);
-    }
-
-    // Initialize parallax effect
-    const heroContent = document.querySelector('.hero-content');
-    const heroSection = document.querySelector('.hero-section');
-
-    if (heroContent && heroSection) {
-        window.addEventListener('scroll', function() {
-            const scrollY = window.scrollY;
-            const heroHeight = heroSection.offsetHeight;
-
-            // Only apply parallax while hero is visible
-            if (scrollY < heroHeight) {
-                const offset = scrollY * 0.3; // Subtle movement
-                heroContent.style.transform = `translateY(${offset}px)`;
-            }
-        });
-    }
-});
-
-// Pretext.js — measure stat labels for responsive sizing
-if (typeof PretextUtils !== 'undefined' && PretextUtils.balanceCardGrid) {
-    document.addEventListener('DOMContentLoaded', function() {
-        // Balance stat card label heights
-        PretextUtils.balanceCardGrid('.stats-row > div', '.text-\\[0\\.85rem\\]');
-        // Balance season summary card heights
-        PretextUtils.balanceCardGrid('.stagger-item', 'h3');
-    });
-}
+function animateCounter(element, target, duration = 400) { let current = 0; const increment = target / (duration / 16); const update = () => { current += increment; element.textContent = current < target ? Math.floor(current).toLocaleString() : target.toLocaleString(); if (current < target) requestAnimationFrame(update); }; requestAnimationFrame(update); }
+document.addEventListener('DOMContentLoaded', function() { const container = document.querySelector('.stats-row'); if (!container) return; const observer = new IntersectionObserver(entries => entries.forEach(entry => { if (!entry.isIntersecting || entry.target.classList.contains('animated')) return; entry.target.classList.add('animated'); entry.target.querySelectorAll('.stat-number').forEach(card => animateCounter(card, parseInt(card.dataset.target, 10))); observer.unobserve(entry.target); }), { threshold: .3 }); observer.observe(container); });
 </script>
+{% endif %}
 {% endblock %}

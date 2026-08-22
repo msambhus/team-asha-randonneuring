@@ -59,6 +59,11 @@ def get_mock_data():
 @main_bp.route('/')
 @cache.cached(timeout=CACHE_TIMEOUT, key_prefix=_home_cache_key)
 def index():
+    # The public home is intentionally story-led and does not need aggregate
+    # rider data. Keep that data behind the authenticated dashboard branch.
+    if not session.get('user_id'):
+        return render_template('index.html')
+
     try:
         stats = get_all_time_stats()
         seasons = get_all_seasons()
