@@ -385,6 +385,7 @@
 .dist-chip.d600  { background: var(--d600-grad); }
 .dist-chip.d1000 { background: var(--d1000-grad); }
 .dist-chip.d1200 { background: var(--d1200-grad); }
+.gr-badge { display:inline-block; margin-left:6px; padding:2px 7px; border-radius:5px; background:#fce7f3; color:#702459; font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; vertical-align:middle; }
 .brevet-card-body {
   padding: 12px 16px 14px;
   border-top: 1px solid var(--ta-border);
@@ -627,7 +628,7 @@
           {% set dc = dist_class(g.km) %}
           {% for ride in g.rides %}
           <div class="mx-h" data-col="{{ ride_idx.i }}"
-               title="{{ ride.name }} — {{ ride.date }}{% if ride.elevation_ft %} · {{ '{:,}'.format(ride.elevation_ft) }} ft{% endif %}">
+               title="{{ ride.name }} — {{ ride.date }}{% if ride.elevation_ft %} · {{ '{:,}'.format(ride.elevation_ft) }} ft{% endif %}{% if g.km >= 1000 %} · Grand Randonnée{% endif %}">
             <div class="mx-h-accent {{ dc }}"></div>
             {% if ride.plan_slug %}
             <a class="mx-h-name" href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}">{{ ride.name }}</a>
@@ -725,7 +726,7 @@
             {% set status = (p.get('status') or '')|upper %}
             {% set dc = dist_class(ride.distance_km) %}
             {% if status == 'FINISHED' %}
-              <span class="ride-pill" style="background:var(--{{ dc }}-soft);color:var(--{{ dc }}-deep);" title="{{ ride.name }} — {{ ride.date }}">
+              <span class="ride-pill" style="background:var(--{{ dc }}-soft);color:var(--{{ dc }}-deep);" title="{{ ride.name }} — {{ ride.date }}{% if ride.distance_km >= 1000 %} · Grand Randonnée{% endif %}">
                 <span class="km">{{ ride.distance_km }}K</span>
                 {% if p.get('finish_time') %}{{ p.get('finish_time') }}{% else %}&#10003;{% endif %}
               </span>
@@ -766,7 +767,7 @@
         <article class="brevet-card">
           <header class="brevet-card-head {{ dc }}">
             <div class="brevet-card-title">
-              <span class="dist-chip {{ dc }}">{{ ride.distance_km }}K</span>
+              <span class="dist-chip {{ dc }}">{{ ride.distance_km }}K</span>{% if ride.distance_km >= 1000 %}<span class="gr-badge">Grand Randonnée</span>{% endif %}
               <h3>
                 {% if ride.plan_slug %}
                   <a href="{{ url_for('riders.ride_plan_detail', slug=ride.plan_slug) }}">{{ ride.name }}</a>
