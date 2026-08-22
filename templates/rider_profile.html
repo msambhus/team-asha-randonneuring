@@ -118,7 +118,7 @@
 <div class="stat-card"><div class="number" style="color:#805ad5;">{% if total_r12s > 1 %}R-12*{{ total_r12s }}{% else %}R-12{% endif %}</div><div class="label">Randonneur 12</div></div>
 {% endif %}
 {% for distance, count in special_distance_counts.items() %}
-<div class="stat-card"><div class="number" style="font-size:1.35rem;color:#702459;">{{ distance }}K</div><div class="label">Grand Randonnée{% if count > 1 %} ×{{ count }}{% endif %}</div></div>
+<div class="stat-card"><div class="number" style="color:#702459;">{{ distance }}K</div><div class="label">Grand Randonnée{% if count > 1 %} ×{{ count }}{% endif %}</div></div>
 {% endfor %}
 {% if rider.pbp_2023_status == 'Yes' %}
 <div class="stat-card"><div class="number" style="font-size:1.4rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">Paris-Brest-Paris</div></div>
