@@ -48,6 +48,7 @@ from shared.strava_analysis_index import ride_card, season_group
 from shared.calendar_view import calendar_event, completed_event, finisher_row
 from shared.calendar_view import group_events_by_month
 from shared.rider_directory_view import public_rider_row
+from shared.rider_distance import canonical_distance_km, special_distance_km
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
@@ -80,7 +81,12 @@ def season_riders(season_name):
             abort(404)
 
         riders_all = get_riders_for_season(season['id'])
-        rides = get_rides_for_season(season['id'])
+        rides = []
+        for raw_ride in get_rides_for_season(season['id']):
+            ride = dict(raw_ride)
+            ride['distance_km'] = canonical_distance_km(
+                ride.get('distance_km'), ride.get('name'))
+            rides.append(ride)
         matrix = get_participation_matrix(season['id'])
         current = get_current_season()
         is_current = current and current['id'] == season['id']
@@ -106,17 +112,19 @@ def season_riders(season_name):
         for r in riders:
             s = all_stats.get(r['id'], {'rides': 0, 'kms': 0})
             sr_n = all_srs.get(r['id'], 0)
-            rides_count = s['rides']
-            kms_count = s['kms']
-
-            # For current season, only count past ride completions
-            if is_current:
-                past_ride_ids = {pr['id'] for pr in past_rides}
-                part = matrix.get(r['id'], {})
-                rides_count = sum(1 for rid, p in part.items()
-                                 if rid in past_ride_ids and p['status'] == 'FINISHED')
-                kms_count = sum(ri['distance_km'] for ri in past_rides
-                               if ri['id'] in part and part[ri['id']]['status'] == 'FINISHED')
+            # Recompute display totals from canonical ride distances so an
+            # imported 1000K/1200K does not remain a stale 600K in summaries.
+            past_ride_ids = {pr['id'] for pr in past_rides}
+            part = matrix.get(r['id'], {})
+            rides_count = sum(
+                1 for rid, p in part.items()
+                if (not is_current or rid in past_ride_ids)
+                and p['status'] == 'FINISHED')
+            kms_count = sum(
+                ri['distance_km'] for ri in rides
+                if ri['id'] in part
+                and (not is_current or ri['id'] in past_ride_ids)
+                and part[ri['id']]['status'] == 'FINISHED')
 
             if rides_count > 0 or not is_current:
                 rider_data.append({
@@ -137,6 +145,14 @@ def season_riders(season_name):
             (matrix.get(rid, {}).get(r['id'], {}).get('status') or '').upper() in ('FINISHED', 'OTL')
             for rid in displayed_rider_ids
         )]
+
+        stats['total_kms'] = sum(
+            ride['distance_km'] for ride in past_rides
+            if any(
+                (matrix.get(rid, {}).get(ride['id'], {}).get('status') or '').upper() == 'FINISHED'
+                for rid in displayed_rider_ids
+            )
+        )
 
         label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
@@ -902,24 +918,34 @@ def rider_profile(rusa_id):
     season_data = []
     career_rides = 0
     career_kms = 0
+    special_distance_counts = {1000: 0, 1200: 0}
 
     for s in seasons:
-        participation = get_rider_participation(rider['id'], s['id'])
-        stats = get_rider_season_stats(rider['id'], s['id'])
+        participation = [dict(p) for p in get_rider_participation(rider['id'], s['id'])]
+        for p in participation:
+            p['distance_km'] = canonical_distance_km(
+                p.get('distance_km'), p.get('ride_name'))
         is_cur = current and current['id'] == s['id']
         sr_n = detect_sr_for_rider_season(rider['id'], s['id'], date_filter=is_cur)
+        finished = [p for p in participation
+                    if str(p.get('status') or '').upper() == 'FINISHED']
+        normalized_kms = sum(p.get('distance_km') or 0 for p in finished)
+        for p in finished:
+            special = special_distance_km(p.get('distance_km'), p.get('ride_name'))
+            if special:
+                special_distance_counts[special] += 1
 
         if participation:
             season_data.append({
                 'season': s,
                 'participation': participation,
-                'rides': stats['rides'],
-                'kms': stats['kms'],
+                'rides': len(finished),
+                'kms': normalized_kms,
                 'sr_count': sr_n,
                 'is_current': is_cur,
             })
-            career_rides += stats['rides']
-            career_kms += stats['kms']
+            career_rides += len(finished)
+            career_kms += normalized_kms
 
     total_srs = get_rider_total_srs(rider['id'])
 
@@ -1111,6 +1137,10 @@ def rider_profile(rusa_id):
                            total_r12s=total_r12s,
                            r12_awards=r12_awards,
                            r12_years=r12_years,
+                           special_distance_counts={
+                               distance: count for distance, count
+                               in special_distance_counts.items() if count
+                           },
                            is_own_profile=False,
                            show_strava_data=show_strava_data)
 
