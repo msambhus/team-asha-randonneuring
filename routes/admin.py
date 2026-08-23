@@ -11,6 +11,7 @@ from models import (get_current_season, get_rides_for_season, get_riders_for_sea
                     auto_finalize_past_rides, get_rides_with_signup_counts,
                     get_strava_admin_summary, get_all_active_strava_connections,
                     get_all_strava_activities_for_eddington, update_eddington_number,
+                    get_strava_connection,
                     admin_delete_rider_ride,
                     get_all_personality_profiles, get_personality_profile,
                     upsert_personality_profile, get_trait_evidence,
@@ -170,6 +171,38 @@ def strava_status():
     _require_admin()
     riders = get_strava_admin_summary()
     return render_template('admin/strava_status.html', riders=riders)
+
+
+@admin_bp.route('/sync-strava/<int:rider_id>', methods=['POST'])
+@user_login_required
+def sync_strava_for_rider(rider_id):
+    """Fetch the latest year of Strava activities for one rider."""
+    _require_admin()
+    from services.strava import sync_rider_activities
+
+    connection = get_strava_connection(rider_id)
+    if not connection:
+        return jsonify({'error': 'No Strava connection for this rider'}), 404
+
+    try:
+        counts = sync_rider_activities(
+            rider_id=rider_id,
+            days=365,
+            calculate_eddington=True,
+        )
+        refreshed = get_strava_connection(rider_id)
+        return jsonify({
+            'rider_id': rider_id,
+            'new': counts.get('new', 0),
+            'updated': counts.get('updated', 0),
+            'failed': counts.get('failed', 0),
+            'total': counts.get('total', 0),
+            'eddington_miles': refreshed.get('eddington_number_miles', 0) if refreshed else 0,
+            'eddington_km': refreshed.get('eddington_number_km', 0) if refreshed else 0,
+        })
+    except Exception as exc:
+        current_app.logger.exception('Admin Strava sync failed for rider %s', rider_id)
+        return jsonify({'error': str(exc)}), 500
 
 
 @admin_bp.route('/sync-finish-times', methods=['POST'])
