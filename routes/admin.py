@@ -205,6 +205,27 @@ def sync_strava_for_rider(rider_id):
         return jsonify({'error': str(exc)}), 500
 
 
+@admin_bp.route('/backfill-strava/<int:rider_id>', methods=['POST'])
+@user_login_required
+def backfill_strava_for_rider(rider_id):
+    """Run one forced 90-day historical Strava backfill chunk for a rider."""
+    _require_admin()
+    from routes.cron import _do_gradual_backfill
+
+    connections = get_all_active_strava_connections()
+    if not any(c['rider_id'] == rider_id for c in connections):
+        return jsonify({'error': 'No active Strava connection for this rider'}), 404
+
+    try:
+        result = _do_gradual_backfill(connections, force_rider_id=rider_id)
+        if result.get('error'):
+            return jsonify(result), 502
+        return jsonify(result)
+    except Exception as exc:
+        current_app.logger.exception('Admin Strava backfill failed for rider %s', rider_id)
+        return jsonify({'error': str(exc)}), 500
+
+
 @admin_bp.route('/sync-finish-times', methods=['POST'])
 @user_login_required
 def sync_finish_times():

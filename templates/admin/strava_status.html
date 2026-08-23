@@ -42,7 +42,7 @@
 <td class="eddington-km" style="text-align:right;">{{ r.eddington_number_km or 0 }}</td>
 <td>{{ r.oldest_activity or '—' }}</td>
 <td>{{ r.newest_activity or '—' }}</td>
-<td>
+<td class="backfill-status">
 {% if r.backfill_error %}
 <span style="color:#c2410c;font-weight:600;" title="{{ r.backfill_error }}">Blocked</span>
 <div style="max-width:220px;font-size:0.7rem;color:#9a3412;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.backfill_error }}">{{ r.backfill_error }}</div>
@@ -65,6 +65,9 @@
 <td>
 <button type="button" class="btn strava-sync-btn" style="padding:5px 9px;font-size:0.75rem;background:#fc4c02;color:#fff;" onclick="syncRiderStrava(this, {{ r.rider_id }})">
 Fetch Strava
+</button>
+<button type="button" class="btn strava-backfill-btn" style="padding:5px 9px;font-size:0.75rem;background:#7c3aed;color:#fff;margin-top:4px;" onclick="backfillRiderStrava(this, {{ r.rider_id }})">
+Backfill 90d
 </button>
 </td>
 </tr>
@@ -123,6 +126,35 @@ async function syncRiderStrava(button, riderId) {
         status.textContent = error.message;
     } finally {
         setButtonBusy(button, false, 'Fetch Strava');
+    }
+}
+
+async function backfillRiderStrava(button, riderId) {
+    var status = document.getElementById('eddington-status');
+    var row = document.querySelector('tr[data-rider-id="' + riderId + '"]');
+    var cursorCell = row && row.querySelector('.backfill-status');
+    setButtonBusy(button, true, 'Backfilling...');
+    status.textContent = '';
+    try {
+        var response = await fetch('{{ url_for("admin.backfill_strava_for_rider", rider_id=0) }}'.replace('/0', '/' + riderId), {method: 'POST'});
+        var data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Backfill failed');
+        if (cursorCell) {
+            cursorCell.textContent = data.cursor_moved_to || data.status || 'Complete';
+            cursorCell.style.color = '#16a34a';
+            cursorCell.style.fontWeight = '600';
+        }
+        status.style.color = '#16a34a';
+        status.textContent = 'Backfilled ' + (data.days_back || 90) + ' days for rider ' + riderId + '.';
+    } catch (error) {
+        if (cursorCell) {
+            cursorCell.textContent = 'Error: ' + error.message;
+            cursorCell.style.color = '#dc2626';
+        }
+        status.style.color = '#dc2626';
+        status.textContent = error.message;
+    } finally {
+        setButtonBusy(button, false, 'Backfill 90d');
     }
 }
 </script>
