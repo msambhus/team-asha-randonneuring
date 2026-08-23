@@ -175,7 +175,7 @@ def sync_strava():
         return auth_error
 
     # Get all riders with active Strava connection
-    from models import get_all_active_strava_connections
+    from models import get_all_active_strava_connections, update_backfill_error
 
     try:
         connections = get_all_active_strava_connections()
@@ -249,6 +249,14 @@ def sync_strava():
                 results['skipped'] += len(connections_to_sync) - i - 1
                 break
 
+            # Keep an invalid/expired rider from blocking historical
+            # backfill selection on every subsequent scheduler run.
+            try:
+                update_backfill_error(rider_id, str(e))
+            except Exception:
+                current_app.logger.exception(
+                    'Could not persist Strava sync error for rider %s', rider_id)
+
     # --- Phase 2: Gradual backfill (loop until rate-limited) ---
     # Optional: pass {"rider_id": 6} in request body to force backfill a specific rider
     force_rider_id = (request.get_json(silent=True) or {}).get('rider_id')
@@ -262,8 +270,10 @@ def sync_strava():
             if backfill_result.get('status') == 'All riders fully backfilled':
                 break
 
-            # Stop on error (including rate limits)
-            if backfill_result.get('error'):
+            # Provider auth failures are rider-scoped: skip that rider and
+            # continue the queue. Rate limits and unexpected errors remain
+            # run-scoped and stop the loop.
+            if backfill_result.get('error') and not backfill_result.get('blocked'):
                 break
 
             time.sleep(1)
@@ -296,7 +306,8 @@ def _do_gradual_backfill(connections, force_rider_id=None):
     Returns:
         dict with backfill details
     """
-    from models import (get_backfill_cursor, update_backfill_cursor,
+    from models import (get_backfill_cursor, get_backfill_error,
+                        update_backfill_cursor, update_backfill_error,
                         get_oldest_activity_date)
     from services.strava import sync_rider_activities
 
@@ -318,9 +329,13 @@ def _do_gradual_backfill(connections, force_rider_id=None):
         best_rider = None
         cursor = None
 
+        blocked_count = 0
         for conn in connections:
             rid = conn['rider_id']
             c = get_backfill_cursor(rid)
+            if get_backfill_error(rid):
+                blocked_count += 1
+                continue
 
             if c is None:
                 # Never backfilled — pick this one
@@ -335,8 +350,13 @@ def _do_gradual_backfill(connections, force_rider_id=None):
                 cursor = c
                 best_rider = conn
 
-    if best_rider is None:
-        msg = 'All riders fully backfilled'
+        if best_rider is None:
+            if blocked_count:
+                msg = 'No eligible riders for backfill'
+                current_app.logger.info(
+                    '%s (%s riders blocked by previous errors)', msg, blocked_count)
+                return {'status': msg, 'blocked': blocked_count}
+            msg = 'All riders fully backfilled'
         current_app.logger.info(msg)
         return {'status': msg}
 
@@ -412,8 +432,20 @@ def _do_gradual_backfill(connections, force_rider_id=None):
             get_db().rollback()
         except Exception:
             pass
+        is_rate_limit = '429' in str(e) or 'rate limit' in str(e).lower()
+        if not force_rider_id and not is_rate_limit:
+            try:
+                update_backfill_error(rider_id, str(e))
+            except Exception:
+                current_app.logger.exception(
+                    'Could not persist backfill error for rider %s', rider_id)
         current_app.logger.error(f'Backfill failed for {rider_name}: {e}')
-        return {'rider_id': rider_id, 'name': rider_name, 'error': str(e)}
+        return {
+            'rider_id': rider_id,
+            'name': rider_name,
+            'error': str(e),
+            'blocked': bool(not force_rider_id and not is_rate_limit),
+        }
 
 
 @cron_bp.route('/finalize-rides', methods=['POST'])
