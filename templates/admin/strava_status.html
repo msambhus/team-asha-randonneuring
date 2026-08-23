@@ -43,7 +43,10 @@
 <td>{{ r.oldest_activity or '—' }}</td>
 <td>{{ r.newest_activity or '—' }}</td>
 <td>
-{% if r.backfill_cursor %}
+{% if r.backfill_error %}
+<span style="color:#c2410c;font-weight:600;" title="{{ r.backfill_error }}">Blocked</span>
+<div style="max-width:220px;font-size:0.7rem;color:#9a3412;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.backfill_error }}">{{ r.backfill_error }}</div>
+{% elif r.backfill_cursor %}
 {{ r.backfill_cursor }}
 {% if r.backfill_cursor.year <= 2008 %}
 <span style="color:#38a169;font-size:0.8rem;">Done</span>
