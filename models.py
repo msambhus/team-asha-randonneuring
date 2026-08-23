@@ -299,7 +299,7 @@ def get_ride_participants(ride_id):
 def get_rider_participation(rider_id, season_id):
     return _execute("""
         SELECT rr.status, rr.finish_time, ri.id as ride_id, ri.name as ride_name,
-               ri.date, ri.distance_km, ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url,
+               ri.date, ri.distance_km, ri.ride_type, ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url,
                ri.ride_plan_id, c.code as club_code, rp.slug as plan_slug
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id

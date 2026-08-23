@@ -932,7 +932,11 @@ def rider_profile(rusa_id):
         normalized_kms = sum(p.get('distance_km') or 0 for p in finished)
         for p in finished:
             special = special_distance_km(p.get('distance_km'), p.get('ride_name'))
-            if special:
+            # PBP is already represented by its own achievement tile. A PBP
+            # result should not also appear as a generic 1200K Grand Randonnée.
+            if special and not (
+                special == 1200 and str(p.get('ride_type') or '').upper() == 'PBP'
+            ):
                 special_distance_counts[special] += 1
 
         if participation:
@@ -956,51 +960,42 @@ def rider_profile(rusa_id):
     r12_years = set(a['end_year'] for a in r12_awards)
 
     # --- Strava training data ---
-    strava_connection = None
+    strava_connection = get_strava_connection(rider['id'])
     training_rides = []
     fitness_score = None
     has_strava = False
     activities = []
     eddington_data = None
 
-    # Only load Strava data if it should be visible
-    if strava_connection and show_strava_data:
-        has_strava = True
-        activities = get_strava_activities(rider['id'], days=28)
-        if activities:
-            fitness_score = calculate_fitness_score(activities)
-            training_rides = score_all_activities(activities)
+    # Eddington is a public aggregate score, while the underlying Strava
+    # activities remain private. Build this from the stored connection and
+    # cached activities even when private training details are disabled.
+    if strava_connection:
+        from services.eddington import (
+            calculate_eddington_number, get_eddington_progress,
+            get_eddington_targets, get_eddington_badge_level,
+        )
+        from models import get_all_strava_activities_for_eddington
 
-        # Get Eddington number and progress
-        if strava_connection.get('eddington_number_miles'):
-            from services.eddington import (
-                calculate_eddington_number, get_eddington_progress,
-                get_eddington_targets, get_eddington_badge_level,
-            )
-            from models import get_all_strava_activities_for_eddington
+        eddington_miles = strava_connection.get('eddington_number_miles') or 0
+        eddington_km = strava_connection.get('eddington_number_km') or 0
+        all_activities = get_all_strava_activities_for_eddington(rider['id'])
 
-            eddington_miles = strava_connection.get('eddington_number_miles', 0)
-            eddington_km = strava_connection.get('eddington_number_km', 0)
+        if all_activities:
+            live_miles = calculate_eddington_number(all_activities, unit='miles')
+            live_km = calculate_eddington_number(all_activities, unit='km')
+            if live_miles > eddington_miles:
+                eddington_miles = live_miles
+                eddington_km = live_km
 
-            # Get all activities for progress calculation
-            all_activities = get_all_strava_activities_for_eddington(rider['id'])
-
-            # Recalculate from activities if stored value looks stale
-            if all_activities:
-                live_miles = calculate_eddington_number(all_activities, unit='miles')
-                live_km = calculate_eddington_number(all_activities, unit='km')
-                if live_miles > eddington_miles:
-                    eddington_miles = live_miles
-                    eddington_km = live_km
-
-            # Calculate progress towards next milestone
-            progress_miles = get_eddington_progress(all_activities, eddington_miles, unit='miles')
+        if eddington_miles:
+            progress_miles = get_eddington_progress(
+                all_activities, eddington_miles, unit='miles')
             badge = get_eddington_badge_level(eddington_miles)
-
-            # Targets up to E100
             max_t = max(100 - eddington_miles, 1)
-            targets = get_eddington_targets(all_activities, eddington_miles, unit='miles', max_targets=max_t)
-
+            targets = get_eddington_targets(
+                all_activities, eddington_miles,
+                unit='miles', max_targets=max_t)
             eddington_data = {
                 'miles': eddington_miles,
                 'km': eddington_km,
@@ -1008,6 +1003,14 @@ def rider_profile(rusa_id):
                 'badge': badge,
                 'targets': targets,
             }
+
+    # Only load detailed Strava training data when the viewer owns the profile.
+    if strava_connection and show_strava_data:
+        has_strava = True
+        activities = get_strava_activities(rider['id'], days=28)
+        if activities:
+            fitness_score = calculate_fitness_score(activities)
+            training_rides = score_all_activities(activities)
 
     # Load Strava brevet-match data for own profile view
     METERS_PER_MILE = 1609.34
