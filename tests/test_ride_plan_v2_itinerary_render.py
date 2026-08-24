@@ -11,6 +11,8 @@ mission requirements:
 from datetime import date
 from unittest.mock import patch
 
+from routes.riders import _get_plan_elevation_track
+
 
 _PLAN = {
     'id': 5,
@@ -76,6 +78,30 @@ def _render(client):
     finally:
         for m in mgrs:
             m.stop()
+
+
+def test_multiday_elevation_track_is_concatenated_by_leg():
+    tracks = {
+        '101': [
+            {'lat': 1.0, 'lng': 1.0, 'dist_m': 0.0, 'e_m': 10.0},
+            {'lat': 1.1, 'lng': 1.1, 'dist_m': 1000.0, 'e_m': 20.0},
+        ],
+        '102': [
+            {'lat': 2.0, 'lng': 2.0, 'dist_m': 0.0, 'e_m': 30.0},
+            {'lat': 2.1, 'lng': 2.1, 'dist_m': 2000.0, 'e_m': 40.0},
+        ],
+    }
+    legs = [
+        {'rwgps_url': 'https://ridewithgps.com/routes/101'},
+        {'rwgps_url': 'https://ridewithgps.com/routes/102'},
+    ]
+    with patch('models.get_ride_plan_legs', return_value=legs), \
+         patch('routes.riders.get_route_elevation_track',
+               side_effect=lambda route_id: tracks[route_id]):
+        combined = _get_plan_elevation_track({'id': 1}, '101')
+
+    assert [point['dist_m'] for point in combined] == [0.0, 1000.0, 3000.0]
+    assert [point['lat'] for point in combined] == [1.0, 1.1, 2.1]
 
 
 def _itinerary_table(html):

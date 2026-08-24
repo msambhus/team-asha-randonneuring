@@ -313,6 +313,58 @@ def _fetch_plan_stop_wind(plan, stops, forecast_date, start_time_str,
     return winds
 
 
+def _get_plan_elevation_track(plan, fallback_route_id=None):
+    """Load and concatenate cached elevation tracks for every plan leg.
+
+    Multi-day plans store one RWGPS route per leg.  The Journey explorer needs
+    one distance-continuous track, while each cached leg starts at distance 0.
+    Geometry remains cache-only here; the warming cron is responsible for
+    populating ``route_geometry_cache``.
+    """
+    from models import get_ride_plan_legs
+
+    try:
+        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])]
+    except Exception:
+        legs = []
+    route_ids = []
+    for leg in legs:
+        route_id = _extract_rwgps_route_id(leg.get('rwgps_url'))
+        if route_id and route_id not in route_ids:
+            route_ids.append(route_id)
+    if not route_ids and fallback_route_id:
+        route_ids = [fallback_route_id]
+
+    combined = []
+    distance_offset = 0.0
+    for route_id in route_ids:
+        try:
+            track = get_route_elevation_track(route_id) or []
+        except Exception:
+            current_app.logger.exception(
+                "elevation track read failed for route %s", route_id)
+            continue
+        if len(track) < 2:
+            continue
+        try:
+            first_distance = float(track[0].get('dist_m') or 0)
+        except (TypeError, ValueError, AttributeError):
+            first_distance = 0.0
+        for index, point in enumerate(track):
+            if index == 0 and combined:
+                continue
+            try:
+                local_distance = float(point.get('dist_m') or 0) - first_distance
+            except (TypeError, ValueError, AttributeError):
+                continue
+            merged = dict(point)
+            merged['dist_m'] = distance_offset + max(0.0, local_distance)
+            combined.append(merged)
+        if combined:
+            distance_offset = float(combined[-1].get('dist_m') or distance_offset)
+    return combined
+
+
 _CUTOFF_HOURS = {200: 13.5, 300: 20, 400: 27, 600: 40, 1000: 75, 1200: 90}
 
 
@@ -2914,7 +2966,8 @@ def ride_plan_detail(slug):
     # returns {'available': False} and overlay_stop_markers returns [] — the page never
     # 500s (mirrors the wind read above).
     try:
-        elevation_track = get_route_elevation_track(weather_route_id) if weather_route_id else None
+        elevation_track = (_get_plan_elevation_track(plan, weather_route_id)
+                           if weather_route_id else None)
     except Exception:
         current_app.logger.exception("v2 elevation track read failed for plan %s", slug)
         elevation_track = None
