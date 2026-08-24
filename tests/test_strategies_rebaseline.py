@@ -47,6 +47,30 @@ def test_base_view_returns_comfort_standard_push():
     assert sum(1 for p in paces if p['recommended']) == 1
 
 
+def test_multiday_standard_summary_aggregates_sleep_and_uses_final_bank():
+    stops = [
+        {'location': 'Start', 'stop_type': 'start', 'distance_miles': 0.0,
+         'segment_time_min': 0, 'stop_duration_min': 0},
+        {'location': 'Day 1 Finish', 'stop_type': 'control', 'distance_miles': 250.0,
+         'segment_time_min': 600, 'stop_duration_min': 180},
+        {'location': 'Day 2 Finish', 'stop_type': 'control', 'distance_miles': 500.0,
+         'segment_time_min': 600, 'stop_duration_min': 240},
+        {'location': 'Finish', 'stop_type': 'finish', 'distance_miles': 745.2,
+         'segment_time_min': 600, 'stop_duration_min': 0},
+    ]
+    plan = {'total_distance_miles': 745.2, 'distance_km': 1200}
+
+    standard = next(
+        p for p in compute_pace_strategies(stops, plan, '04:00', 90)
+        if p['id'] == 'standard'
+    )
+
+    assert standard['sleep'] == '7:00'
+    assert standard['total'] == '37:00'
+    assert standard['bank'] == '+52:57'
+    assert standard['stops'][-1]['bank'] == '+52:57'
+
+
 # ── Rebaseline when viewing a custom plan ────────────────────────────
 
 def test_rebaseline_custom_faster_puts_team_on_comfort_side():

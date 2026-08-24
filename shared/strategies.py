@@ -109,9 +109,10 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
             raw_break = s.get('stop_duration_min') or 0
             is_halt = raw_break >= 120
             break_m = raw_break
-            if is_halt:
+            if is_halt and sleep_min_override is not None:
                 break_m = sleep_min_override
-                halt_min_used = break_m
+            if is_halt:
+                halt_min_used += int(break_m or 0)
             cum += seg
             arrival = cum
             cum += break_m
@@ -161,9 +162,10 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
         total_elapsed = cum
         return out_stops, total_elapsed, halt_min_used, last_bank
 
-    standard_halt = next(
-        (s.get('stop_duration_min') for s in stops if (s.get('stop_duration_min') or 0) >= 120),
-        0,
+    standard_halt = sum(
+        int(s.get('stop_duration_min') or 0)
+        for s in stops
+        if (s.get('stop_duration_min') or 0) >= 120
     )
 
     cutoff_min = int(cutoff_hours * 60) if cutoff_hours else None
@@ -173,7 +175,7 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
         total never exceeds the brevet cutoff. Returns the same tuple as
         compute_variant plus the (possibly-reduced) factor actually used.
         """
-        stops_out, total, sleep_used, bank = compute_variant(factor, sleep_min_override or 0)
+        stops_out, total, sleep_used, bank = compute_variant(factor, sleep_min_override)
         if cutoff_min is None or total <= cutoff_min:
             return stops_out, total, sleep_used, bank, factor
         # First reduce sleep to absorb the overshoot.
@@ -195,7 +197,7 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
         return stops_out, total, sleep_used, bank, factor
 
     std_stops, std_total, std_sleep, std_bank, _std_f = compute_fitted_variant(
-        _PACE_VARIANTS['standard']['factor'], standard_halt or 0)
+        _PACE_VARIANTS['standard']['factor'], None)
     com_stops, com_total, com_sleep, com_bank, _com_f = compute_fitted_variant(
         _PACE_VARIANTS['comfort']['factor'], _PACE_VARIANTS['comfort']['sleep_min'])
     psh_stops, psh_total, psh_sleep, psh_bank, _psh_f = compute_fitted_variant(
@@ -212,8 +214,8 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
     # derived variant fills the opposite side.
     if base_stops is not None:
         def _halt_of(src):
-            return next((s.get('stop_duration_min') for s in src
-                         if (s.get('stop_duration_min') or 0) >= 120), 0) or 0
+            return sum(int(s.get('stop_duration_min') or 0) for s in src
+                       if (s.get('stop_duration_min') or 0) >= 120)
 
         def _card(stop_set, factor, sleep_override, cid, name, color,
                   summary, recommended, risk):
@@ -230,11 +232,11 @@ def compute_pace_strategies(stops, plan, start_time_str, cutoff_hours,
                 '_total': total,
             }
 
-        your_card = _card(stops, 1.0, _halt_of(stops), 'yours',
+        your_card = _card(stops, 1.0, None, 'yours',
                           your_plan_name or 'Your plan', '#1a365d',
                           'Your saved custom plan', False,
                           'Your own pacing and breaks.')
-        team_card = _card(base_stops, 1.0, _halt_of(base_stops), 'team',
+        team_card = _card(base_stops, 1.0, None, 'team',
                           'Team plan', '#1d4ed8', 'The base team plan', True,
                           'The route owner’s recommended pacing.')
         if your_card['_total'] <= team_card['_total']:
