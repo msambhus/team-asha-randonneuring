@@ -242,7 +242,7 @@ def submit_validation(event_id):
     # control orders are inferred from whichever row has evidence.
     per_control_notes = []
     for control in (route_plan.get('stops') or []):
-        if control.get('stop_type') in ('start', 'finish'):
+        if control.get('stop_type') != 'control':
             continue
         order = str(control.get('stop_order'))
         row_description = (request.form.get(f'proof_description_{order}') or '').strip()

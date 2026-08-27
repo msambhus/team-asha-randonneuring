@@ -485,5 +485,19 @@ document.addEventListener('DOMContentLoaded', function() {
 window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
 </script>
 <script defer src="/_vercel/insights/script.js"></script>
+<style>
+.validation-submit-link.is-loading{opacity:.75;cursor:wait}
+.validation-submit-link .validation-link-spinner{display:inline-block;width:.85em;height:.85em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:validation-link-spin .7s linear infinite;vertical-align:-.1em;margin-right:.4em}
+@keyframes validation-link-spin{to{transform:rotate(360deg)}}
+</style>
+<script>
+document.addEventListener('click', function (event) {
+  const link = event.target.closest('a.validation-submit-link');
+  if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target === '_blank') return;
+  link.classList.add('is-loading');
+  link.setAttribute('aria-busy', 'true');
+  link.innerHTML = '<span class="validation-link-spinner" aria-hidden="true"></span>Loading evidence…';
+}, true);
+</script>
 </body>
 </html>
