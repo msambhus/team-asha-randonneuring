@@ -55,15 +55,76 @@ def suggested_ride_mode(rider_id: int, event_id: int, *, slot_id: int | None = N
     return RIDE_MODE_WORKER_RIDE
 
 
+def ride_mode_stale(registration: dict | None, suggested: str) -> bool:
+    """True when an acknowledged plan no longer matches role-based suggestion."""
+    if not registration or not registration.get('ride_mode_ack_at'):
+        return False
+    current = registration.get('ride_mode')
+    return current in RIDE_MODES and current != suggested
+
+
+def reconcile_ride_mode_after_volunteer_change(rider_id: int, event_id: int) -> dict | None:
+    """Refresh ride plan when volunteer roles change.
+
+    Drops stale worker-ride choices when roles now suggest event day (or vice versa),
+    clears worker ride when the rider is no longer a volunteer, and requires a fresh
+    acknowledgment before the updated plan is treated as confirmed.
+    """
+    event = models.get_brevet_event_registration(event_id)
+    if not event or not event.get('worker_ride_enabled'):
+        return None
+
+    registration = models.get_event_signup_registration(rider_id, event_id)
+    if not registration or not registration.get('ride_mode'):
+        return None
+
+    volunteer = rider_is_volunteer(rider_id, event_id)
+    current = registration.get('ride_mode')
+    acked = bool(registration.get('ride_mode_ack_at'))
+
+    if not volunteer:
+        if current == RIDE_MODE_WORKER_RIDE:
+            row = models.set_event_signup_ride_mode(
+                rider_id, event_id,
+                ride_mode=RIDE_MODE_EVENT_DAY,
+                acknowledged=False,
+            )
+            return {
+                'reset': True,
+                'ride_mode': row.get('ride_mode'),
+                'reason': 'no_longer_volunteer',
+            }
+        return None
+
+    suggested = suggested_ride_mode(rider_id, event_id)
+    if acked and current != suggested:
+        row = models.set_event_signup_ride_mode(
+            rider_id, event_id,
+            ride_mode=suggested,
+            acknowledged=False,
+        )
+        return {
+            'reset': True,
+            'ride_mode': row.get('ride_mode'),
+            'reason': 'volunteer_role_changed',
+            'suggested_ride_mode': suggested,
+        }
+    return None
+
+
 def ride_mode_context(rider_id: int, event_id: int, event) -> dict:
     """Payload for volunteer/registration UIs."""
     registration = models.get_event_signup_registration(rider_id, event_id)
     volunteer = rider_is_volunteer(rider_id, event_id)
     enabled = bool(event.get('worker_ride_enabled'))
+    suggested = (
+        suggested_ride_mode(rider_id, event_id) if volunteer else RIDE_MODE_EVENT_DAY
+    )
     current = (registration or {}).get('ride_mode')
     if current not in RIDE_MODES:
         current = RIDE_MODE_EVENT_DAY if registration else None
     week_start, week_end = event_week_bounds(_as_date(event.get('date')))
+    stale = ride_mode_stale(registration, suggested)
     return {
         'worker_ride_enabled': enabled,
         'worker_ride_open': worker_ride_open(event),
@@ -80,10 +141,10 @@ def ride_mode_context(rider_id: int, event_id: int, event) -> dict:
                 not registration
                 or not registration.get('ride_mode')
                 or not registration.get('ride_mode_ack_at')
+                or stale
             )),
-        'suggested_ride_mode': (
-            suggested_ride_mode(rider_id, event_id) if volunteer else RIDE_MODE_EVENT_DAY
-        ),
+        'suggested_ride_mode': suggested,
+        'ride_mode_stale': stale,
         'event_week_start': week_start.isoformat(),
         'event_week_end': week_end.isoformat(),
     }

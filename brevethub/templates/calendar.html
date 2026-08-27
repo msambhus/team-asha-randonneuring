@@ -1684,6 +1684,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                   {% set post_ride = post_ride_open_by_event.get(ev.id) %}
                   {% set vol = my_volunteer_signups.get(ev.id) if rider else None %}
                   {% set vsum = volunteer_summary_by_event.get(ev.id) %}
+                  {% set ride_plan = my_ride_plans.get(ev.id) if rider else None %}
 
                   {% if rider %}
                     {% set status = my_status.get(ev.id) %}
@@ -1695,6 +1696,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                     {% else %}
                       {% if not status or status == 'interested' %}{% set ns.menu = true %}{% endif %}
                     {% endif %}
+                    {% if vol and ev.worker_ride_enabled %}{% set ns.menu = true %}{% endif %}
 
                     <div class="signup-status-row">
                       <div class="signup-status-chips">
@@ -1708,8 +1710,9 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                           {% if vol %}
                           <button type="button" class="volunteer-chip is-active{% if vol[0].status == 'exception' %} is-pending{% endif %}"
                                   data-volunteer-chip data-volunteer-event="{{ ev.id }}"
-                                  title="View or change volunteer role">
-                            Volunteering · <span class="vol-role-name">{{ vol[0].role_name }}</span>{% if vol[0].status == 'exception' %} · pending{% endif %}{% if vol|length > 1 %} +{{ vol|length - 1 }}{% endif %}
+                                  {% if ride_plan %}data-ride-plan="{{ ride_plan }}"{% endif %}
+                                  title="View volunteer role or change ride plan">
+                            Volunteering · <span class="vol-role-name">{{ vol[0].role_name }}</span>{% if vol[0].status == 'exception' %} · pending{% endif %}{% if vol|length > 1 %} +{{ vol|length - 1 }}{% endif %}{% if ride_plan %} · <span class="vol-ride-plan">{{ ride_plan|ride_mode_label }}</span>{% endif %}
                           </button>
                           {% else %}
                           <button type="button" class="volunteer-chip is-needed"
@@ -1751,6 +1754,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                              {% if show_proof %}data-proof-url="{{ url_for('validation.submit_validation', event_id=ev.id) }}"{% endif %}
                              data-post-ride="{{ '1' if post_ride else '0' }}"
                              {% if ev.volunteer_enabled %}data-volunteer-enabled="1"{% endif %}
+                             {% if ev.worker_ride_enabled %}data-worker-ride-enabled="1"{% endif %}
                              {% if vol %}data-volunteering="1"{% endif %}
                              {% if ev.registration_enabled and not (reg and reg.registration_status) %}data-show-register="1"{% endif %}>
                           {% if ns.menu %}
@@ -1778,6 +1782,9 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                                 {% elif status == 'interested' %}
                                 <button type="button" class="event-actions-item" role="menuitem" data-action="clear" data-event-id="{{ ev.id }}">Clear interest</button>
                                 {% endif %}
+                              {% endif %}
+                              {% if vol and ev.worker_ride_enabled %}
+                              <button type="button" class="event-actions-item is-volunteer" role="menuitem" data-ride-plan-event="{{ ev.id }}">Change ride plan</button>
                               {% endif %}
                             </div>
                           </div>
@@ -1923,6 +1930,8 @@ function eventActionsMenuHtml(items) {
       attrs += ' aria-checked="' + (item.active ? 'true' : 'false') + '"';
     } else if (item.volunteer) {
       attrs += ' data-volunteer-event="' + item.eventId + '"';
+    } else if (item.ridePlan) {
+      attrs += ' data-ride-plan-event="' + item.eventId + '"';
     } else {
       attrs += ' data-action="' + item.action + '" data-event-id="' + item.eventId + '"';
     }
@@ -1941,8 +1950,13 @@ function signupActionsMenuItems(container) {
   var postRide = container.getAttribute('data-post-ride') === '1';
   var proofUrl = container.getAttribute('data-proof-url');
   var volunteerEnabled = container.getAttribute('data-volunteer-enabled') === '1';
+  var workerRideEnabled = container.getAttribute('data-worker-ride-enabled') === '1';
   var volunteering = container.getAttribute('data-volunteering') === '1';
   var items = [];
+
+  if (volunteering && workerRideEnabled) {
+    items.push({ type: 'button', ridePlan: true, label: 'Change ride plan', eventId: eventId });
+  }
 
   if (isRegistered) {
     if (proofUrl) items.push({ type: 'link', href: proofUrl, label: 'Submit proof' });

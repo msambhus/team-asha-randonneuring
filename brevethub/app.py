@@ -194,6 +194,11 @@ def create_app():
         from brevethub.services.registration import status_display_label
         return status_display_label(value)
 
+    @app.template_filter('ride_mode_label')
+    def ride_mode_label_filter(value):
+        from brevethub.services.worker_ride import ride_mode_label
+        return ride_mode_label(value)
+
     return app
 
 
