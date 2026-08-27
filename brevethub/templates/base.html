@@ -149,7 +149,9 @@ gtag('config', 'G-LVJ9R7K2Z3');
 .club-header-nav .nav-dropdown-menu {
   display: none;
   position: absolute;
-  top: calc(100% + 4px);
+  /* Keep the panel attached to the trigger so pointer movement cannot cross
+     a hover gap and close the submenu before an item can be clicked. */
+  top: 100%;
   right: 0;
   min-width: 200px;
   z-index: 200;
