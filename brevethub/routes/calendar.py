@@ -279,6 +279,11 @@ def calendar():
         my_registrations = {
             row['event_id']: row for row in reg_rows if row.get('registration_status')
         }
+        my_ride_plans = {
+            row['event_id']: row['ride_mode']
+            for row in reg_rows
+            if row.get('ride_mode') and row.get('ride_mode_ack_at')
+        }
         try:
             proof_by_event = {
                 int(row['event_id']): row
@@ -303,6 +308,7 @@ def calendar():
         my_volunteer_signups = models.get_rider_volunteer_signups_by_event(rider['id'])
     else:
         my_volunteer_signups = {}
+        my_ride_plans = {}
 
     default_state = request.args.get('state') or None
     default_area = request.args.get('area') or None
@@ -324,6 +330,7 @@ def calendar():
     return render_template(
         'calendar.html', events=events, months=months, my_status=my_status,
         my_registrations=my_registrations,
+        my_ride_plans=my_ride_plans,
         post_ride_open_by_event=post_ride_open_by_event,
         proof_by_event=proof_by_event,
         my_results=my_results, rider=rider, club=club, states=states,

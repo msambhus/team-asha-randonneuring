@@ -62,6 +62,67 @@ def test_validate_event_day_default():
     assert result['ride_mode'] == RIDE_MODE_EVENT_DAY
 
 
+@patch('brevethub.services.worker_ride.models.set_event_signup_ride_mode')
+@patch('brevethub.services.worker_ride.models.get_event_signup_registration')
+@patch('brevethub.services.worker_ride.models.get_brevet_event_registration')
+@patch('brevethub.services.worker_ride.suggested_ride_mode', return_value=RIDE_MODE_EVENT_DAY)
+@patch('brevethub.services.worker_ride.rider_is_volunteer', return_value=True)
+def test_reconcile_resets_stale_worker_ride_when_roles_suggest_event_day(
+    mock_vol, mock_suggested, mock_event, mock_reg, mock_set,
+):
+    from brevethub.services.worker_ride import reconcile_ride_mode_after_volunteer_change
+
+    mock_event.return_value = _event()
+    mock_reg.return_value = {
+        'ride_mode': RIDE_MODE_WORKER_RIDE,
+        'ride_mode_ack_at': '2026-01-01T00:00:00',
+    }
+    mock_set.return_value = {'ride_mode': RIDE_MODE_EVENT_DAY, 'ride_mode_ack_at': None}
+
+    result = reconcile_ride_mode_after_volunteer_change(1, 10)
+    assert result['reset'] is True
+    assert result['reason'] == 'volunteer_role_changed'
+    mock_set.assert_called_once_with(
+        1, 10, ride_mode=RIDE_MODE_EVENT_DAY, acknowledged=False,
+    )
+
+
+@patch('brevethub.services.worker_ride.models.set_event_signup_ride_mode')
+@patch('brevethub.services.worker_ride.models.get_event_signup_registration')
+@patch('brevethub.services.worker_ride.models.get_brevet_event_registration')
+@patch('brevethub.services.worker_ride.rider_is_volunteer', return_value=False)
+def test_reconcile_clears_worker_ride_when_no_longer_volunteer(
+    mock_vol, mock_event, mock_reg, mock_set,
+):
+    from brevethub.services.worker_ride import reconcile_ride_mode_after_volunteer_change
+
+    mock_event.return_value = _event()
+    mock_reg.return_value = {
+        'ride_mode': RIDE_MODE_WORKER_RIDE,
+        'ride_mode_ack_at': '2026-01-01T00:00:00',
+    }
+    mock_set.return_value = {'ride_mode': RIDE_MODE_EVENT_DAY, 'ride_mode_ack_at': None}
+
+    result = reconcile_ride_mode_after_volunteer_change(1, 10)
+    assert result['reason'] == 'no_longer_volunteer'
+    mock_set.assert_called_once_with(
+        1, 10, ride_mode=RIDE_MODE_EVENT_DAY, acknowledged=False,
+    )
+
+
+def test_ride_mode_stale_when_acknowledged_plan_differs_from_suggestion():
+    from brevethub.services.worker_ride import ride_mode_stale
+
+    assert ride_mode_stale(
+        {'ride_mode': RIDE_MODE_WORKER_RIDE, 'ride_mode_ack_at': 'x'},
+        RIDE_MODE_EVENT_DAY,
+    ) is True
+    assert ride_mode_stale(
+        {'ride_mode': RIDE_MODE_EVENT_DAY, 'ride_mode_ack_at': 'x'},
+        RIDE_MODE_EVENT_DAY,
+    ) is False
+
+
 @patch('brevethub.services.worker_ride.models.get_volunteer_slot')
 @patch('brevethub.services.worker_ride.models.get_rider_active_volunteer_signups')
 def test_suggested_ride_mode_from_role_flag(mock_signups, mock_slot):

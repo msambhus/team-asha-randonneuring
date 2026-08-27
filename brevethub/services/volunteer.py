@@ -5,7 +5,10 @@ from datetime import date
 
 from brevethub import models
 from brevethub.services.registration import rider_display_name
-from brevethub.services.worker_ride import ride_mode_context
+from brevethub.services.worker_ride import (
+    reconcile_ride_mode_after_volunteer_change,
+    ride_mode_context,
+)
 
 
 def volunteer_open(event, *, slot_count=None):
@@ -76,6 +79,8 @@ def signup_for_slot(rider, slot_id):
     if not row:
         return {'ok': False, 'error': 'Could not save volunteer signup.'}
 
+    reconcile_ride_mode_after_volunteer_change(rider['id'], event['id'])
+
     return {
         'ok': True,
         'status': row['status'],
@@ -105,4 +110,13 @@ def withdraw_signup(rider, signup_id):
     if signup['rider_id'] != rider['id']:
         return {'ok': False, 'error': 'Not your signup.'}
     models.set_volunteer_signup_status(signup_id, 'withdrawn')
+    slot = models.get_volunteer_slot(signup['slot_id'])
+    event_id = slot['event_id'] if slot else None
+    if event_id:
+        reconcile_ride_mode_after_volunteer_change(rider['id'], event_id)
+        event = models.get_brevet_event_registration(event_id)
+        return {
+            'ok': True,
+            'ride_mode': ride_mode_context(rider['id'], event_id, event) if event else None,
+        }
     return {'ok': True}
