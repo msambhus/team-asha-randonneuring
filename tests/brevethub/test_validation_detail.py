@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from brevethub.app import app
 from brevethub.routes.admin import _validation_visualization
+
+TEMPLATES = Path(__file__).parents[2] / "brevethub" / "templates"
 
 
 def test_validation_visualization_keeps_template_contract_without_route(monkeypatch):
@@ -34,3 +38,13 @@ def test_validation_detail_renders_when_route_is_unavailable(monkeypatch):
 
     assert response.status_code == 200
     assert b'Healdsburg 300k' in response.data
+
+
+def test_chart_uses_shared_mph_scale_for_wind():
+    template = (TEMPLATES / "admin" / "validation_detail.html").read_text()
+    source = (Path(__file__).parents[2] / "brevethub" / "routes" / "admin.py").read_text()
+
+    assert "wind_magnitude_mph" in source
+    assert "max_mph = max(max_speed, max_wind)" in source
+    assert "validation-chart-right-labels" in template
+    assert "display:none" in template

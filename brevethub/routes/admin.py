@@ -129,7 +129,9 @@ def _validation_visualization(submission):
         # sampled speed; organizers can inspect the segment data directly.
         samples.append({'distance_mi': round(route_dist / 1609.344, 1), 'lat': p['lat'], 'lng': p['lng'],
                         'elevation_ft': round(float(p.get('e_m') or 0) * 3.28084), 'speed_mph': speed,
-                        'grade': round(grade, 2), 'headwind_mph': headwind_mph, 'anomaly': anomaly})
+                        'grade': round(grade, 2), 'headwind_mph': headwind_mph,
+                        'wind_magnitude_mph': abs(headwind_mph) if headwind_mph is not None else 0,
+                        'anomaly': anomaly})
     route_json = [{'lat': float(p['lat']), 'lng': float(p['lng']), 'dist_m': float(p.get('dist_m') or 0),
                    'e_m': float(p.get('e_m') or 0)} for p in route]
     # Build a control-by-control comparison from the persisted plan and the
@@ -299,17 +301,18 @@ def _validation_visualization(submission):
     max_speed = max((s['speed_mph'] for s in samples), default=1) or 1
     max_elevation = max((s['elevation_ft'] for s in samples), default=1) or 1
     max_wind = max((abs(s['headwind_mph']) for s in samples if s.get('headwind_mph') is not None), default=1) or 1
+    max_mph = max(max_speed, max_wind) or 1
     def path_for(key, maximum, baseline=chart_h):
         # Wind is signed, so reserve the upper/lower halves around a visible
         # zero line instead of letting negative values run outside the SVG.
         span = (chart_h / 2) - 12 if baseline != chart_h else chart_h - 20
         return ' '.join(f"{(s['distance_mi'] / max_distance) * chart_w:.1f},{baseline - (float(s.get(key) or 0) / maximum) * span:.1f}" for s in samples)
     chart = {
-        'speed_path': path_for('speed_mph', max_speed),
+        'speed_path': path_for('speed_mph', max_mph),
         'elevation_path': path_for('elevation_ft', max_elevation),
-        'wind_path': path_for('headwind_mph', max_wind, chart_h / 2),
+        'wind_path': path_for('wind_magnitude_mph', max_mph),
         'max_distance': max_distance,
-        'max_speed': max_speed,
+        'max_speed': max_mph,
         'max_elevation': max_elevation,
         'max_wind': max_wind,
         'anomalies': [{'x': round((s['distance_mi'] / max_distance) * chart_w, 1),
