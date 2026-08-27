@@ -85,6 +85,25 @@ def test_missing_all_evidence_is_incomplete():
     assert any(check.result == 'incomplete' for check in checks)
 
 
+def test_route_departures_include_activity_mile_ranges():
+    points = [_point(0, 37.0), _point(1, 37.001), _point(2, 37.02),
+              _point(3, 37.021), _point(4, 37.022), _point(5, 37.001),
+              _point(6, 37.0)]
+    route = [
+        {'lat': 37.0, 'lng': -122.0, 'dist_m': 0, 'e_m': 10},
+        {'lat': 37.001, 'lng': -122.0, 'dist_m': 1000, 'e_m': 20},
+        {'lat': 37.0, 'lng': -122.0, 'dist_m': 2000, 'e_m': 10},
+    ]
+    _, checks = validate_submission(
+        points=points, route=route, controls=[], event=_event(distance_km=1),
+        official_start=points[0].timestamp,
+    )
+
+    departures = next(check for check in checks if check.code == 'route_departures')
+    assert departures.metrics['departures']
+    assert {'start_mile', 'end_mile'} <= departures.metrics['departures'][0].keys()
+
+
 def test_duplicate_and_ebike_are_review_flags_not_rejections():
     points = [_point(0), _point(5, 37.01), _point(10, 37.02)]
     route = [

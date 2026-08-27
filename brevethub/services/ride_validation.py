@@ -316,7 +316,11 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
             before = max(0, group[0] - 1)
             after = min(len(nearest_indexes) - 1, group[-1] + 1)
             route_delta = abs(nearest_indexes[after] - nearest_indexes[before])
+            start_mile = float(activity_sample[group[0]].distance_m or 0) / 1609.344
+            end_mile = float(activity_sample[group[-1]].distance_m or 0) / 1609.344
             departure_runs.append({'samples': len(group),
+                                   'start_mile': round(start_mile, 1),
+                                   'end_mile': round(end_mile, 1),
                                    'returned_near_entry': route_delta <= 3})
         checks.append(_check('route_departures', 'Route departures', 'needs_review' if meaningful_groups else 'clear',
                              f'{len(departure_runs)} route departure(s) need review for an authorized detour and return to the departure point.' if meaningful_groups else 'No material route departure was found.',
