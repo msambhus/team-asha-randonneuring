@@ -1088,6 +1088,7 @@ def _parse_event_edit_form(form):
 
     fields['registration_enabled'] = form.get('registration_enabled') == 'on'
     fields['volunteer_enabled'] = form.get('volunteer_enabled') == 'on'
+    fields['worker_ride_enabled'] = form.get('worker_ride_enabled') == 'on'
 
     club_raw = (form.get('club_id') or '').strip()
     if club_raw:
@@ -1290,6 +1291,8 @@ def event_roster(event_id):
             status=row.get('status') or '',
             registration_status=row.get('registration_status'),
         )
+        from brevethub.services.worker_ride import ride_mode_label
+        row['ride_mode_label'] = ride_mode_label(row.get('ride_mode'))
         row['validation_label'] = _validation_label(row)
 
     # Apply filter
@@ -1757,6 +1760,12 @@ def volunteer_slots_setup(event_id):
             flash('Volunteer signup ' + ('enabled' if enabled else 'disabled') + '.', 'success')
             return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
 
+        if action == 'toggle_worker_ride':
+            enabled = request.form.get('worker_ride_enabled') == '1'
+            models.set_event_worker_ride_enabled(event_id, enabled)
+            flash('Worker ride ' + ('enabled' if enabled else 'disabled') + '.', 'success')
+            return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))
+
         if action == 'add_slot':
             role_name = (request.form.get('role_name') or '').strip()
             if not role_name:
@@ -1767,12 +1776,14 @@ def volunteer_slots_setup(event_id):
                 except (TypeError, ValueError):
                     capacity = 1
                 description = (request.form.get('description') or '').strip() or None
+                allows_event_day = request.form.get('allows_event_day') == '1'
                 slots = models.get_volunteer_slots_for_event(event_id)
                 models.create_volunteer_slot(
                     event_id, role_name,
                     description=description,
                     capacity=capacity,
                     sort_order=len(slots),
+                    allows_ride_on_event_day=allows_event_day,
                 )
                 if not event.get('volunteer_enabled'):
                     models.set_event_volunteer_enabled(event_id, True)
@@ -1813,12 +1824,14 @@ def volunteer_slots_setup(event_id):
                     capacity = 1
                 description = (request.form.get(f'description_{slot_id}') or '').strip() or None
                 sort_order = request.form.get(f'sort_order_{slot_id}', type=int)
+                allows_event_day = request.form.get(f'allows_event_day_{slot_id}') == '1'
                 models.update_volunteer_slot(
                     slot_id,
                     role_name=role_name,
                     description=description,
                     capacity=capacity,
                     sort_order=sort_order if sort_order is not None else None,
+                    allows_ride_on_event_day=allows_event_day,
                 )
                 updated += 1
             removed = len(delete_ids)
@@ -1844,12 +1857,14 @@ def volunteer_slots_setup(event_id):
                     capacity = 1
                 description = (request.form.get('description') or '').strip() or None
                 sort_order = request.form.get('sort_order', type=int)
+                allows_event_day = request.form.get('allows_event_day') == '1'
                 models.update_volunteer_slot(
                     slot_id,
                     role_name=role_name,
                     description=description,
                     capacity=capacity,
                     sort_order=sort_order if sort_order is not None else None,
+                    allows_ride_on_event_day=allows_event_day,
                 )
                 flash('Volunteer role updated.', 'success')
             return redirect(url_for('admin.volunteer_slots_setup', event_id=event_id))

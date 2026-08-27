@@ -232,6 +232,19 @@
   </div>
 
   <div class="card mb-4 p-4">
+    <form method="post" class="flex items-center gap-3 flex-wrap vol-other-form">
+      <input type="hidden" name="action" value="toggle_worker_ride">
+      <label class="flex items-center gap-2 font-semibold text-sm">
+        <input type="checkbox" name="worker_ride_enabled" value="1"
+               {% if event.worker_ride_enabled %}checked{% endif %}
+               class="vol-toggle-worker-ride">
+        Worker ride enabled
+      </label>
+    </form>
+    <p class="text-text-light text-xs mt-2">Volunteers may ride the same route Sun–Sat of event week instead of on event day. Requires volunteer signup first.</p>
+  </div>
+
+  <div class="card mb-4 p-4">
     <h2 class="text-primary font-bold text-base mb-2">Add role</h2>
     <p class="text-text-light text-xs mb-3">Pick a preset or enter a custom role, then click <strong>Add role</strong>.</p>
     <div class="preset-btns" style="margin-bottom:20px;">
@@ -255,6 +268,10 @@
         <label class="text-xs font-semibold text-text-light uppercase">Notes (optional)</label>
         <input type="text" name="description" class="form-input" placeholder="Location or instructions">
       </div>
+      <label class="flex items-center gap-2 text-sm font-semibold">
+        <input type="checkbox" name="allows_event_day" value="1">
+        Role allows riding on event day (suggested default)
+      </label>
       <button type="submit" class="btn btn-primary btn-sm w-fit">Add role</button>
     </form>
   </div>
@@ -288,6 +305,12 @@
                      value="{{ slot.capacity }}" min="1" max="99"
                      class="form-input text-sm vol-track">
             </div>
+            <label class="flex items-center gap-1 text-xs font-semibold whitespace-nowrap" title="Suggested default when volunteer chooses ride plan">
+              <input type="checkbox" name="allows_event_day_{{ slot.id }}" value="1"
+                     {% if slot.allows_ride_on_event_day %}checked{% endif %}
+                     class="vol-track">
+              Event-day OK
+            </label>
             {% set avail = slot.capacity - (slot.confirmed_count or 0) %}
             {% if avail > 0 %}
             <span class="vol-available">{{ avail }} available</span>
@@ -485,6 +508,22 @@
         return;
       }
       toggle.closest('form').submit();
+    });
+  }
+
+  var workerToggle = document.querySelector('.vol-toggle-worker-ride');
+  if (workerToggle) {
+    workerToggle.addEventListener('change', function (e) {
+      if (!dirty) {
+        workerToggle.closest('form').submit();
+        return;
+      }
+      if (!window.confirm(leaveMsg)) {
+        e.preventDefault();
+        workerToggle.checked = !workerToggle.checked;
+        return;
+      }
+      workerToggle.closest('form').submit();
     });
   }
 })();

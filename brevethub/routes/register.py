@@ -32,6 +32,7 @@ from brevethub.services.registration import (
     RUSA_RENEW_URL,
     SFR_RENEW_URL,
 )
+from brevethub.services.worker_ride import ride_mode_context, ride_mode_label
 
 _TEAM_EVENT_TYPES = frozenset({'acp flèche', 'acp fleche', 'rusa arrow/dart/dart populaire', 'rusa dart'})
 
@@ -315,6 +316,7 @@ def register_details(event_id):
             'spots_open': spots_open,
             'registration_enabled': bool(event.get('registration_enabled')),
             'registration_open': registration_open(event, confirmed_count=confirmed),
+            'worker_ride_enabled': bool(event.get('worker_ride_enabled')),
             'summary': event.get('event_summary'),
             'controls': _controls_for_event(event_id),
             'is_team_event': (event.get('ride_type') or '').lower() in _TEAM_EVENT_TYPES,
@@ -336,6 +338,7 @@ def register_profile(event_id):
     rider = models.get_rider_by_id(rider['id'])
     existing = models.get_event_signup_registration(rider['id'], event_id)
     member = evaluation.get('membership') or membership_status(rider)
+    rm_ctx = ride_mode_context(rider['id'], event_id, event)
     return jsonify({
         'profile': profile_payload(
             rider, edit_url=_profile_edit_url(request.path)),
@@ -348,6 +351,7 @@ def register_profile(event_id):
             'text': waiver['waiver_text'] if waiver else '',
         },
         'existing_registration': existing,
+        'ride_mode': rm_ctx,
         'membership_pills': membership_pills(rider, membership=member),
     })
 
@@ -375,7 +379,10 @@ def register_confirm(event_id):
         return jsonify({'error': 'Waiver version mismatch. Refresh and try again.'}), 400
 
     result = confirm_registration_for_event(
-        rider, event, waiver=waiver, waiver_accepted=True)
+        rider, event, waiver=waiver, waiver_accepted=True,
+        ride_mode=payload.get('ride_mode'),
+        ride_mode_acknowledged=bool(payload.get('ride_mode_acknowledged')),
+    )
     if not result.get('ok'):
         code = 409 if 'posted result' in result.get('error', '') else 400
         return jsonify(result), code
@@ -403,6 +410,7 @@ def register_confirm(event_id):
         **result,
         'rider_name': rider_display_name(rider),
         'email': rider.get('email'),
+        'ride_mode_label': ride_mode_label(result.get('ride_mode')),
         'event': {
             **result['event'],
             'ride_type': event.get('ride_type'),

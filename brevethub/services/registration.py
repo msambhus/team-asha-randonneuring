@@ -5,6 +5,11 @@ import re
 from datetime import date, datetime
 
 from brevethub import models
+from brevethub.services.worker_ride import (
+    RIDE_MODE_EVENT_DAY,
+    ride_mode_context,
+    validate_ride_mode,
+)
 
 PROFILE_REQUIRED_FIELDS = (
     'first_name', 'last_name', 'phone', 'city',
@@ -590,7 +595,9 @@ def existing_registration_payload(existing: dict | None) -> dict | None:
 
 
 def confirm_registration_for_event(rider: dict, event: dict, *, waiver,
-                                   waiver_accepted: bool) -> dict:
+                                   waiver_accepted: bool,
+                                   ride_mode: str | None = None,
+                                   ride_mode_acknowledged: bool = False) -> dict:
     """Shared single-event confirm logic for individual and bulk registration."""
     if not waiver_accepted or not waiver:
         return {'ok': False, 'error': 'Waiver acceptance is required.'}
@@ -609,6 +616,29 @@ def confirm_registration_for_event(rider: dict, event: dict, *, waiver,
             'membership_season_year': evaluation.get('membership_season_year'),
             'membership': evaluation.get('membership'),
         }
+
+    ctx = ride_mode_context(rider['id'], event['id'], event)
+    if ctx.get('worker_ride_enabled') and ctx.get('is_volunteer'):
+        existing = models.get_event_signup_registration(rider['id'], event['id'])
+        mode = ride_mode or (existing or {}).get('ride_mode')
+        if not ride_mode_acknowledged and not (existing or {}).get('ride_mode_ack_at'):
+            return {
+                'ok': False,
+                'error': 'Confirm your ride plan (event day or worker ride).',
+                'needs_ride_mode': True,
+            }
+        check = validate_ride_mode(rider['id'], event, mode)
+        if not check.get('ok'):
+            return {'ok': False, 'error': check['error'], 'needs_ride_mode': True}
+        ride_mode = check['ride_mode']
+        ride_mode_acknowledged = True
+    else:
+        mode = ride_mode or RIDE_MODE_EVENT_DAY
+        check = validate_ride_mode(rider['id'], event, mode)
+        if not check.get('ok'):
+            return {'ok': False, 'error': check['error']}
+        ride_mode = check['ride_mode']
+
     snap = profile_snapshot(rider)
     models.record_waiver_acceptance(
         event['id'], rider['id'], waiver['id'], snap)
@@ -620,6 +650,8 @@ def confirm_registration_for_event(rider: dict, event: dict, *, waiver,
         registration_status=reg_status,
         exception_reason=exc_reason,
         confirmation_code=code,
+        ride_mode=ride_mode,
+        ride_mode_acknowledged=ride_mode_acknowledged,
     )
     if row is None:
         return {'ok': False, 'error': 'Cannot register — ride already has a posted result.'}
@@ -628,6 +660,7 @@ def confirm_registration_for_event(rider: dict, event: dict, *, waiver,
         'event_id': event['id'],
         'registration_status': reg_status,
         'confirmation_code': row.get('confirmation_code') or code,
+        'ride_mode': row.get('ride_mode') or ride_mode,
         'exceptions': evaluation['exceptions'],
         'event': {
             'name': event['name'],

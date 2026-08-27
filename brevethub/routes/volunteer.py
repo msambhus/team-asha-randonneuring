@@ -10,6 +10,7 @@ from brevethub.services.volunteer import (
     volunteer_open,
     withdraw_signup,
 )
+from brevethub.services.worker_ride import ride_mode_context, set_ride_mode
 
 volunteer_bp = Blueprint('volunteer', __name__)
 
@@ -41,6 +42,7 @@ def volunteer_slots(event_id):
             'name': event['name'],
             'date': str(event['date']),
             'volunteer_enabled': bool(event.get('volunteer_enabled')),
+            'worker_ride_enabled': bool(event.get('worker_ride_enabled')),
             'volunteer_open': volunteer_open(event, slot_count=len(slots)),
         },
         'slots': [slot_payload(s) for s in slots],
@@ -58,6 +60,7 @@ def volunteer_status(event_id):
     signups = models.get_rider_volunteer_signups_for_event(rider['id'], event_id)
     return jsonify({
         'signups': signups,
+        'ride_mode': ride_mode_context(rider['id'], event_id, event),
         'profile': {
             'name': rider_display_name(rider),
             'complete': profile_field_status(rider)['complete'],
@@ -101,4 +104,39 @@ def volunteer_withdraw(signup_id):
     result = withdraw_signup(rider, signup_id)
     if not result.get('ok'):
         return jsonify(result), 404
+    return jsonify(result)
+
+
+@volunteer_bp.route('/calendar/<int:event_id>/ride-mode', methods=['GET'])
+@login_required
+def ride_mode_status(event_id):
+    """Ride mode context for volunteers (event day vs worker ride)."""
+    event, err = _event_or_404(event_id)
+    if err:
+        return err
+    rider = current_rider()
+    return jsonify({
+        'ride_mode': ride_mode_context(rider['id'], event_id, event),
+    })
+
+
+@volunteer_bp.route('/calendar/<int:event_id>/ride-mode', methods=['POST'])
+@login_required
+def ride_mode_set(event_id):
+    """Save acknowledged ride mode choice for a volunteer."""
+    rider = current_rider()
+    event, err = _event_or_404(event_id)
+    if err:
+        return err
+
+    payload = request.get_json(silent=True) or {}
+    ride_mode = payload.get('ride_mode')
+    acknowledged = bool(payload.get('acknowledged'))
+    if not acknowledged:
+        return jsonify({'error': 'Please confirm your ride plan.'}), 400
+
+    result = set_ride_mode(
+        rider['id'], event_id, ride_mode, acknowledged=True)
+    if not result.get('ok'):
+        return jsonify(result), 400
     return jsonify(result)
