@@ -15,6 +15,19 @@
 .evidence-choice-title{display:flex;align-items:center;gap:8px;margin-bottom:7px;color:#1e3a63;font-weight:700}
 .evidence-choice-number{display:inline-grid;place-items:center;width:1.55rem;height:1.55rem;border-radius:999px;background:#1f4f85;color:#fff;font-size:.78rem;line-height:1}
 .evidence-choice-note{margin-top:7px;font-size:.78rem;color:#64748b;line-height:1.45}
+.control-proof-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.control-proof-pane{min-width:0}
+.control-proof-pane>label{display:block;margin-bottom:6px}
+.proof-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;margin-top:9px}
+.proof-gallery:empty{display:none}
+.proof-gallery button{display:block;overflow:hidden;aspect-ratio:1;border:1px solid #cbd5e1;border-radius:7px;background:#f8fafc;padding:0;cursor:zoom-in}
+.proof-gallery img{width:100%;height:100%;object-fit:cover}
+.proof-file-chip{display:block;padding:8px;border:1px solid #cbd5e1;border-radius:7px;background:#f8fafc;color:#334155;font-size:.75rem;overflow-wrap:anywhere}
+.proof-modal{width:min(92vw,1100px);max-width:none;max-height:92vh;margin:auto;padding:14px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.35)}
+.proof-modal::backdrop{background:rgba(15,23,42,.72)}
+.proof-modal img{display:block;max-width:100%;max-height:calc(92vh - 80px);margin:auto;object-fit:contain}
+.proof-modal-close{display:block;margin:0 0 10px auto}
+@media(max-width:640px){.control-proof-grid{grid-template-columns:1fr}}
 .evidence-section legend{font-size:1.05rem;letter-spacing:.01em}.evidence-help{font-size:.82rem;color:#64748b;line-height:1.5}.control-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.control-option{display:flex;gap:8px;align-items:flex-start;background:#fff;border:1px solid #d9e2ec;border-radius:9px;padding:10px;font-size:.85rem}.control-option input{margin-top:3px}.submit-spinner{display:inline-block;width:1rem;height:1rem;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:submit-spin .7s linear infinite;vertical-align:-.15em;margin-right:.45rem}@keyframes submit-spin{to{transform:rotate(360deg)}}@media(max-width:640px){.evidence-section{padding:17px}}
 </style>{% endblock %}
 {% block content %}
@@ -28,12 +41,13 @@
       <div class="evidence-choice"><div class="evidence-choice-title"><span class="evidence-choice-number">3</span><label for="recordings">Upload original FIT / GPX file(s)</label></div><input id="recordings" name="recordings" type="file" accept=".fit,.gpx,application/gpx+xml" multiple class="form-input w-full"><p class="evidence-choice-note">Multiple files from a device restart are combined. Combined limit: 4 MB.</p></div>
     </section>
     <details class="evidence-section"><summary class="text-primary font-bold cursor-pointer">Traditional proof <span class="font-normal text-text-light text-sm">(optional — click to add receipts, photos, or control notes)</span></summary><p class="evidence-help mt-3 mb-4">Add proof directly to each control. A receipt, checkpoint photo, brevet-card image, or short note can be submitted per row.</p>
-      {% if controls %}<div class="space-y-3">{% for control in controls if control.stop_type == 'control' %}<div class="rounded-lg border border-border bg-white p-3"><div class="font-semibold text-primary mb-2">{{ control.stop_order }}. {{ control.location|clean_name }}</div><div class="grid md:grid-cols-2 gap-3"><div><label class="evidence-help block mb-1" for="proof_files_{{ control.stop_order }}">Receipt / photo</label><input id="proof_files_{{ control.stop_order }}" name="proof_files_{{ control.stop_order }}" type="file" multiple accept="image/*,.pdf" class="form-input w-full"></div><div><label class="evidence-help block mb-1" for="proof_description_{{ control.stop_order }}">Proof note</label><textarea id="proof_description_{{ control.stop_order }}" name="proof_description_{{ control.stop_order }}" class="form-input w-full" rows="2" placeholder="Receipt time, card answer, or other proof"></textarea></div></div></div>{% endfor %}</div>{% endif %}
+      {% if controls %}<div class="space-y-3">{% for control in controls if control.stop_type == 'control' %}<div class="rounded-lg border border-border bg-white p-3"><div class="font-semibold text-primary mb-2">{{ control.stop_order }}. {{ control.location|clean_name }}</div><div class="control-proof-grid"><div class="control-proof-pane"><label class="evidence-help" for="proof_files_{{ control.stop_order }}">Receipt / photo</label><input id="proof_files_{{ control.stop_order }}" name="proof_files_{{ control.stop_order }}" type="file" multiple accept="image/*,.pdf" class="form-input w-full proof-file-input" data-proof-gallery="proof-gallery-{{ control.stop_order }}"><div id="proof-gallery-{{ control.stop_order }}" class="proof-gallery" aria-live="polite"></div></div><div class="control-proof-pane"><label class="evidence-help" for="proof_description_{{ control.stop_order }}">Proof note</label><textarea id="proof_description_{{ control.stop_order }}" name="proof_description_{{ control.stop_order }}" class="form-input w-full" rows="5" placeholder="Receipt time, card answer, or other proof"></textarea></div></div></div>{% endfor %}</div>{% endif %}
     </details>
     <section class="evidence-section"><h2 class="text-primary font-bold">Additional context <span class="font-normal text-text-light text-sm">(optional)</span></h2><p class="evidence-help mt-1 mb-3">Explain a road closure, safety detour, GPS gap, or other detail an organizer should review.</p><textarea id="rider_explanation" name="rider_explanation" class="form-input w-full" rows="3" placeholder="Add context for the organizer…"></textarea></section>
     <div class="flex items-center justify-between gap-3 flex-wrap"><a class="btn bg-white text-primary border border-border" href="{{ url_for('validation.my_validations') }}">Cancel</a><button class="btn btn-primary" type="submit" id="submit-evidence-button"><span class="submit-label">Submit for verification</span></button></div>
-  </form>
+</form>
 </div></div>
+<dialog id="proof-image-modal" class="proof-modal" aria-labelledby="proof-image-modal-title"><button type="button" class="btn bg-white text-primary border border-border proof-modal-close" id="proof-image-modal-close">Close</button><h2 id="proof-image-modal-title" class="sr-only">Receipt or photo preview</h2><img id="proof-image-modal-image" alt="Full-size receipt or photo preview"></dialog>
 <script>
 document.getElementById('rider-validation-form')?.addEventListener('submit', function () {
   const button = document.getElementById('submit-evidence-button');
@@ -41,6 +55,46 @@ document.getElementById('rider-validation-form')?.addEventListener('submit', fun
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
   button.innerHTML = '<span class="submit-spinner" aria-hidden="true"></span>Submitting evidence…';
+});
+
+document.querySelectorAll('.proof-file-input').forEach(function (input) {
+  input.addEventListener('change', function () {
+    const gallery = document.getElementById(input.dataset.proofGallery);
+    if (!gallery) return;
+    gallery.replaceChildren();
+    Array.from(input.files || []).forEach(function (file) {
+      if (file.type.startsWith('image/')) {
+        const url = URL.createObjectURL(file);
+        const preview = document.createElement('button');
+        preview.type = 'button';
+        preview.title = 'Open ' + file.name;
+        preview.setAttribute('aria-label', 'Open ' + file.name);
+        const image = document.createElement('img');
+        image.src = url;
+        image.alt = file.name;
+        preview.appendChild(image);
+        preview.addEventListener('click', function () {
+          const modal = document.getElementById('proof-image-modal');
+          const modalImage = document.getElementById('proof-image-modal-image');
+          modalImage.src = url;
+          modalImage.alt = file.name;
+          modal.showModal();
+        });
+        gallery.appendChild(preview);
+      } else {
+        const chip = document.createElement('span');
+        chip.className = 'proof-file-chip';
+        chip.textContent = file.name;
+        gallery.appendChild(chip);
+      }
+    });
+  });
+});
+
+const proofModal = document.getElementById('proof-image-modal');
+document.getElementById('proof-image-modal-close')?.addEventListener('click', function () { proofModal.close(); });
+proofModal?.addEventListener('click', function (event) {
+  if (event.target === proofModal) proofModal.close();
 });
 </script>
 {% endblock %}
