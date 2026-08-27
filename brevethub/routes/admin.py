@@ -37,6 +37,8 @@ from brevethub.shared.control_times import control_open_time_minutes
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
 from brevethub.shared.weather import fetch_historical_wind, headwind_component
+from shared.strava import fetch_activity_streams
+from brevethub.routes.strava import _valid_access_token
 from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
     _route_point_for_mile, validate_submission,
@@ -448,6 +450,10 @@ def _points_from_cached_strava(row, started_at):
     if not row or not row.get('activity_streams'):
         raise ValueError('That Strava activity has no cached streams. Analyze it first.')
     streams = json.loads(zlib.decompress(bytes(row['activity_streams'])))
+    return _points_from_strava_streams(streams, started_at)
+
+
+def _points_from_strava_streams(streams, started_at):
     latlng, seconds = streams.get('latlng') or [], streams.get('time') or []
     elevation = streams.get('altitude') or []
     if len(latlng) < 2 or len(seconds) != len(latlng):
@@ -464,6 +470,79 @@ def _points_from_cached_strava(row, started_at):
                                  float(pair[0]), float(pair[1]),
                                  elevation[idx] if idx < len(elevation) else None))
     return combine_recordings([points])
+
+
+def _deferred_validation_points(submission):
+    """Load the persisted track, or hydrate a deferred Strava track on review."""
+    raw_track = submission.get('normalized_track') or []
+    if len(raw_track) >= 2:
+        points = []
+        for row in raw_track:
+            if len(row) < 3:
+                continue
+            try:
+                points.append(TrackPoint(
+                    datetime.fromisoformat(str(row[2]).replace('Z', '+00:00')),
+                    float(row[0]), float(row[1]),
+                    float(row[3]) if len(row) > 3 and row[3] is not None else None,
+                ))
+            except (TypeError, ValueError):
+                continue
+        if len(points) >= 2:
+            return combine_recordings([points]), dict(submission.get('source_metadata') or {})
+
+    activity_id = submission.get('strava_activity_id')
+    if not activity_id:
+        return [], dict(submission.get('source_metadata') or {})
+    metadata = dict(submission.get('source_metadata') or {})
+    started_at = metadata.get('strava_activity_started_at')
+    if not started_at:
+        event = {'date': submission.get('event_date'), 'start_time': submission.get('start_time'),
+                 'region': submission.get('region')}
+        official = _official_start(event)
+        started_at = official.isoformat() if official else None
+    cached = models.get_ride_analysis(submission['rider_id'], int(activity_id))
+    if cached and cached.get('activity_streams') and started_at:
+        return _points_from_cached_strava(cached, started_at), metadata
+    connection = models.get_strava_connection(submission['rider_id'])
+    if not connection or not started_at:
+        raise ValueError('The submitted Strava activity could not be hydrated. Ask the rider for a FIT/GPX file.')
+    streams = fetch_activity_streams(
+        _valid_access_token(submission['rider_id'], connection), int(activity_id),
+        api_base=current_app.config['STRAVA_API_BASE'],
+    )
+    metadata['strava_stream_fetched'] = True
+    return _points_from_strava_streams(streams, started_at), metadata
+
+
+def _analyze_deferred_submission(submission):
+    """Run the expensive validation only when an organizer opens the record."""
+    points, metadata = _deferred_validation_points(submission)
+    event = dict(submission)
+    event['date'] = submission['event_date']
+    plan = models.get_brevet_route_plan_with_stops(submission['event_id']) or {'plan': {}, 'stops': []}
+    route_id = (plan.get('plan') or {}).get('rwgps_route_id')
+    route = models.get_rp_route_elevation_track(route_id) if route_id else []
+    if not route:
+        official_route_id = extract_rwgps_route_id(submission.get('rwgps_url') or '')
+        if official_route_id and str(official_route_id) != str(route_id):
+            route = models.get_rp_route_elevation_track(official_route_id) or []
+    evidence = models.get_validation_evidence(submission['id'])
+    evidence_orders = {int(order) for row in evidence for order in (row.get('control_orders') or [])}
+    traditional = any(row.get('evidence_kind') == 'traditional' for row in evidence)
+    conflicts = models.find_validation_evidence_conflicts(
+        [row.get('sha256') for row in evidence], event_id=submission['event_id'],
+        rider_id=submission['rider_id'], strava_activity_id=submission.get('strava_activity_id'))
+    decision, checks = validate_submission(
+        points=points, route=route or [], controls=plan.get('stops') or [], event=event,
+        official_start=_official_start(event), evidence_control_orders=evidence_orders,
+        source_metadata=metadata, duplicate_conflicts=[dict(row) for row in conflicts],
+        has_traditional_evidence=traditional,
+    )
+    metadata.pop('validation_pending', None)
+    models.update_validation_analysis_input(
+        submission['id'], normalized_track=_track_json(points), source_metadata=metadata)
+    models.replace_validation_checks(submission['id'], decision, checks)
 
 
 @admin_bp.route('/validations', methods=['GET'])
@@ -600,8 +679,17 @@ def validation_detail(submission_id):
     submission = models.get_validation_submission(submission_id)
     if not submission:
         abort(404)
+    checks = models.get_validation_checks(submission_id)
+    if not checks and not submission.get('organizer_decision'):
+        try:
+            _analyze_deferred_submission(submission)
+            submission = models.get_validation_submission(submission_id)
+            checks = models.get_validation_checks(submission_id)
+        except Exception as exc:
+            current_app.logger.warning('Deferred validation failed for submission %s: %s', submission_id, exc)
+            flash('Validation analysis could not be completed yet. The submission is saved; try opening it again.', 'error')
     return render_template('admin/validation_detail.html', submission=submission,
-                           checks=models.get_validation_checks(submission_id),
+                           checks=checks,
                            evidence=models.get_validation_evidence(submission_id),
                            visualization=_validation_visualization(submission),
                            mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN', ''))
