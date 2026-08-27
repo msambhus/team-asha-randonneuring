@@ -27,6 +27,8 @@
 .proof-modal::backdrop{background:rgba(15,23,42,.72)}
 .proof-modal img{display:block;max-width:100%;max-height:calc(92vh - 80px);margin:auto;object-fit:contain}
 .proof-modal-close{display:block;margin:0 0 10px auto}
+.upload-status{margin-top:10px;font-size:.85rem;color:#1e3a63}
+.upload-status.error{color:#b42318}
 @media(max-width:640px){.control-proof-grid{grid-template-columns:1fr}}
 .evidence-section legend{font-size:1.05rem;letter-spacing:.01em}.evidence-help{font-size:.82rem;color:#64748b;line-height:1.5}.control-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.control-option{display:flex;gap:8px;align-items:flex-start;background:#fff;border:1px solid #d9e2ec;border-radius:9px;padding:10px;font-size:.85rem}.control-option input{margin-top:3px}.submit-spinner{display:inline-block;width:1rem;height:1rem;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:submit-spin .7s linear infinite;vertical-align:-.15em;margin-right:.45rem}@keyframes submit-spin{to{transform:rotate(360deg)}}@media(max-width:640px){.evidence-section{padding:17px}}
 </style>{% endblock %}
@@ -42,6 +44,7 @@
     </section>
     <details class="evidence-section"><summary class="text-primary font-bold cursor-pointer">Traditional proof <span class="font-normal text-text-light text-sm">(optional — click to add receipts, photos, or control notes)</span></summary><p class="evidence-help mt-3 mb-4">Add proof directly to each control. A receipt, checkpoint photo, brevet-card image, or short note can be submitted per row.</p>
       {% if controls %}<div class="space-y-3">{% for control in controls if control.stop_type == 'control' %}<div class="rounded-lg border border-border bg-white p-3"><div class="font-semibold text-primary mb-2">{{ control.stop_order }}. {{ control.location|clean_name }}</div><div class="control-proof-grid"><div class="control-proof-pane"><label class="evidence-help" for="proof_files_{{ control.stop_order }}">Receipt / photo</label><input id="proof_files_{{ control.stop_order }}" name="proof_files_{{ control.stop_order }}" type="file" multiple accept="image/*,.pdf" class="form-input w-full proof-file-input" data-proof-gallery="proof-gallery-{{ control.stop_order }}"><div id="proof-gallery-{{ control.stop_order }}" class="proof-gallery" aria-live="polite"></div></div><div class="control-proof-pane"><label class="evidence-help" for="proof_description_{{ control.stop_order }}">Proof note</label><textarea id="proof_description_{{ control.stop_order }}" name="proof_description_{{ control.stop_order }}" class="form-input w-full" rows="5" placeholder="Receipt time, card answer, or other proof"></textarea></div></div></div>{% endfor %}</div>{% endif %}
+      <p class="upload-status" id="evidence-upload-status" role="status" aria-live="polite">Phone photos are optimized automatically before upload. Combined evidence limit: 4 MB.</p>
     </details>
     <section class="evidence-section"><h2 class="text-primary font-bold">Additional context <span class="font-normal text-text-light text-sm">(optional)</span></h2><p class="evidence-help mt-1 mb-3">Explain a road closure, safety detour, GPS gap, or other detail an organizer should review.</p><textarea id="rider_explanation" name="rider_explanation" class="form-input w-full" rows="3" placeholder="Add context for the organizer…"></textarea></section>
     <div class="flex items-center justify-between gap-3 flex-wrap"><a class="btn bg-white text-primary border border-border" href="{{ url_for('validation.my_validations') }}">Cancel</a><button class="btn btn-primary" type="submit" id="submit-evidence-button"><span class="submit-label">Submit for verification</span></button></div>
@@ -49,12 +52,79 @@
 </div></div>
 <dialog id="proof-image-modal" class="proof-modal" aria-labelledby="proof-image-modal-title"><button type="button" class="btn bg-white text-primary border border-border proof-modal-close" id="proof-image-modal-close">Close</button><h2 id="proof-image-modal-title" class="sr-only">Receipt or photo preview</h2><img id="proof-image-modal-image" alt="Full-size receipt or photo preview"></dialog>
 <script>
-document.getElementById('rider-validation-form')?.addEventListener('submit', function () {
+const evidenceForm = document.getElementById('rider-validation-form');
+const uploadStatus = document.getElementById('evidence-upload-status');
+const SAFE_UPLOAD_BYTES = 3.75 * 1024 * 1024;
+
+function replaceInputFiles(input, files) {
+  if (!window.DataTransfer) return false;
+  const transfer = new DataTransfer();
+  files.forEach(function (file) { transfer.items.add(file); });
+  input.files = transfer.files;
+  return true;
+}
+
+function optimizeImage(file) {
+  if (!file.type.startsWith('image/') || file.size < 750 * 1024) return Promise.resolve(file);
+  return new Promise(function (resolve) {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = function () {
+      const longest = Math.max(image.naturalWidth, image.naturalHeight);
+      const scale = Math.min(1, 1800 / longest);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function (blob) {
+        URL.revokeObjectURL(url);
+        if (!blob || blob.size >= file.size) return resolve(file);
+        resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: file.lastModified }));
+      }, 'image/jpeg', .82);
+    };
+    image.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+    image.src = url;
+  });
+}
+
+async function prepareEvidenceUploads() {
+  const inputs = Array.from(evidenceForm.querySelectorAll('input[type="file"]'));
+  for (const input of inputs) {
+    const files = await Promise.all(Array.from(input.files || []).map(optimizeImage));
+    if (files.length && !replaceInputFiles(input, files)) {
+      throw new Error('This browser cannot optimize uploads. Please use smaller images or upload fewer files.');
+    }
+  }
+  const bytes = inputs.reduce(function (sum, input) {
+    return sum + Array.from(input.files || []).reduce(function (total, file) { return total + file.size; }, 0);
+  }, 0);
+  if (bytes > SAFE_UPLOAD_BYTES) {
+    throw new Error('The selected evidence is still too large after photo optimization. Please choose smaller images or upload fewer files (maximum 4 MB total).');
+  }
+}
+
+evidenceForm?.addEventListener('submit', async function (event) {
   const button = document.getElementById('submit-evidence-button');
   if (!button || button.disabled) return;
+  event.preventDefault();
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
   button.innerHTML = '<span class="submit-spinner" aria-hidden="true"></span>Submitting evidence…';
+  if (uploadStatus) uploadStatus.className = 'upload-status';
+  if (uploadStatus) uploadStatus.textContent = 'Preparing evidence uploads…';
+  try {
+    await prepareEvidenceUploads();
+    if (uploadStatus) uploadStatus.textContent = 'Uploads prepared. Submitting…';
+    HTMLFormElement.prototype.submit.call(evidenceForm);
+  } catch (error) {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    button.innerHTML = '<span class="submit-label">Submit for verification</span>';
+    if (uploadStatus) {
+      uploadStatus.className = 'upload-status error';
+      uploadStatus.textContent = error.message;
+    }
+  }
 });
 
 document.querySelectorAll('.proof-file-input').forEach(function (input) {

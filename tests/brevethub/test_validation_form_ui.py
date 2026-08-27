@@ -15,6 +15,9 @@ def test_validation_form_styles_make_fields_distinct():
     assert "control-proof-grid" in source
     assert "proof-image-modal" in source
     assert "URL.createObjectURL(file)" in source
+    assert "optimizeImage" in source
+    assert "SAFE_UPLOAD_BYTES = 3.75 * 1024 * 1024" in source
+    assert "Preparing evidence uploads" in source
 
 
 def test_manual_proof_is_rendered_only_for_controls():
