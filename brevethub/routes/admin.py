@@ -52,7 +52,8 @@ def _validation_visualization(submission):
     route = models.get_rp_route_elevation_track(route_id) if route_id else []
     raw_track = submission.get('normalized_track') or []
     if not route or len(raw_track) < 2:
-        return {'route': route or [], 'track': raw_track, 'samples': [], 'wind_available': False}
+        return {'route': route or [], 'track': raw_track, 'samples': [], 'segments': [],
+                'wind_available': False}
 
     track = []
     distance_m = 0.0
@@ -87,7 +88,8 @@ def _validation_visualization(submission):
         track.append(point)
         previous = point
     if len(track) < 2:
-        return {'route': route, 'track': raw_track, 'samples': [], 'wind_available': False}
+        return {'route': route, 'track': raw_track, 'samples': [], 'segments': [],
+                'wind_available': False}
 
     route_samples = route[::max(1, len(route) // 180)]
     coords = [{'lat': float(p['lat']), 'lng': float(p['lng'])} for p in route_samples]
