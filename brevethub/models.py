@@ -2662,6 +2662,17 @@ def replace_validation_checks(submission_id, machine_decision, checks):
         raise
 
 
+def update_validation_analysis_input(submission_id, *, normalized_track, source_metadata):
+    """Persist track data hydrated during deferred organizer analysis."""
+    return db.execute(
+        "UPDATE rp_validation_submission "
+        "SET normalized_track = %s, source_metadata = %s, updated_at = NOW() "
+        "WHERE id = %s RETURNING id",
+        (Json(normalized_track or []), Json(source_metadata or {}), submission_id),
+        returning=True,
+    )
+
+
 def list_validation_submissions():
     return db.query(
         "SELECT s.id, s.machine_decision, s.organizer_decision, s.source_type, "
@@ -2677,7 +2688,7 @@ def list_validation_submissions():
 def get_validation_submission(submission_id):
     return db.query_one(
         "SELECT s.*, e.name AS event_name, e.date AS event_date, e.distance_km, "
-        "       e.start_location, e.start_time, e.time_limit_hours, e.rwgps_url, "
+        "       e.start_location, e.start_time, e.time_limit_hours, e.rwgps_url, e.region, "
         "       split_part(r.email, '@', 1) AS rider_name "
         "FROM rp_validation_submission s "
         "JOIN rp_brevet_event e ON e.id = s.event_id "

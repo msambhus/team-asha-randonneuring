@@ -149,7 +149,9 @@ gtag('config', 'G-LVJ9R7K2Z3');
 .club-header-nav .nav-dropdown-menu {
   display: none;
   position: absolute;
-  top: calc(100% + 4px);
+  /* Keep the panel attached to the trigger so pointer movement cannot cross
+     a hover gap and close the submenu before an item can be clicked. */
+  top: 100%;
   right: 0;
   min-width: 200px;
   z-index: 200;
@@ -485,5 +487,26 @@ document.addEventListener('DOMContentLoaded', function() {
 window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
 </script>
 <script defer src="/_vercel/insights/script.js"></script>
+<style>
+.async-navigation-link.is-loading,.validation-submit-link.is-loading{opacity:.75;cursor:wait;pointer-events:none}
+.async-navigation-link .validation-link-spinner,.validation-submit-link .validation-link-spinner{display:inline-block;width:.85em;height:.85em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:validation-link-spin .7s linear infinite;vertical-align:-.1em;margin-right:.4em}
+@keyframes validation-link-spin{to{transform:rotate(360deg)}}
+</style>
+<script>
+document.addEventListener('click', function (event) {
+  const link = event.target.closest('a.async-navigation-link, a.validation-submit-link');
+  if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target === '_blank') return;
+  if (link.classList.contains('is-loading')) {
+    event.preventDefault();
+    return;
+  }
+  link.classList.add('is-loading');
+  link.setAttribute('aria-busy', 'true');
+  link.setAttribute('aria-disabled', 'true');
+  link.setAttribute('tabindex', '-1');
+  const label = link.dataset.loadingLabel || (link.classList.contains('validation-submit-link') ? 'Loading evidence…' : 'Loading…');
+  link.innerHTML = '<span class="validation-link-spinner" aria-hidden="true"></span>' + label;
+}, true);
+</script>
 </body>
 </html>

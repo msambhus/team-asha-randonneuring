@@ -33,12 +33,15 @@ from flask import (Blueprint, abort, current_app, flash, redirect,
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
 from brevethub.shared.operations_status import route_plan_status
+from brevethub.shared.control_times import control_open_time_minutes
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
 from brevethub.shared.weather import fetch_historical_wind, headwind_component
+from shared.strava import fetch_activity_streams
+from brevethub.routes.strava import _valid_access_token
 from brevethub.services.ride_validation import (
     TrackPoint, combine_recordings, fingerprint, parse_fit, parse_gpx,
-    validate_submission,
+    _route_point_for_mile, validate_submission,
 )
 from brevethub.services.registration import progress_label, rider_display_name, status_display_label
 
@@ -51,11 +54,20 @@ def _validation_visualization(submission):
     route = models.get_rp_route_elevation_track(route_id) if route_id else []
     raw_track = submission.get('normalized_track') or []
     if not route or len(raw_track) < 2:
-        return {'route': route or [], 'track': raw_track, 'samples': [], 'wind_available': False}
+        return {'route': route or [], 'track': raw_track, 'samples': [], 'segments': [],
+                'wind_available': False}
 
     track = []
     distance_m = 0.0
     previous = None
+
+    def geo_distance_m(a_lat, a_lng, b_lat, b_lng):
+        dlat = math.radians(float(b_lat) - float(a_lat))
+        dlng = math.radians(float(b_lng) - float(a_lng))
+        lat1 = math.radians(float(a_lat))
+        lat2 = math.radians(float(b_lat))
+        hav = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng / 2) ** 2
+        return 6371000 * 2 * math.asin(min(1, math.sqrt(hav)))
     for row in raw_track:
         if len(row) < 3:
             continue
@@ -78,7 +90,8 @@ def _validation_visualization(submission):
         track.append(point)
         previous = point
     if len(track) < 2:
-        return {'route': route, 'track': raw_track, 'samples': [], 'wind_available': False}
+        return {'route': route, 'track': raw_track, 'samples': [], 'segments': [],
+                'wind_available': False}
 
     route_samples = route[::max(1, len(route) // 180)]
     coords = [{'lat': float(p['lat']), 'lng': float(p['lng'])} for p in route_samples]
@@ -118,7 +131,9 @@ def _validation_visualization(submission):
         # sampled speed; organizers can inspect the segment data directly.
         samples.append({'distance_mi': round(route_dist / 1609.344, 1), 'lat': p['lat'], 'lng': p['lng'],
                         'elevation_ft': round(float(p.get('e_m') or 0) * 3.28084), 'speed_mph': speed,
-                        'grade': round(grade, 2), 'headwind_mph': headwind_mph, 'anomaly': anomaly})
+                        'grade': round(grade, 2), 'headwind_mph': headwind_mph,
+                        'wind_magnitude_mph': abs(headwind_mph) if headwind_mph is not None else 0,
+                        'anomaly': anomaly})
     route_json = [{'lat': float(p['lat']), 'lng': float(p['lng']), 'dist_m': float(p.get('dist_m') or 0),
                    'e_m': float(p.get('e_m') or 0)} for p in route]
     # Build a control-by-control comparison from the persisted plan and the
@@ -136,6 +151,8 @@ def _validation_visualization(submission):
             except (TypeError, ValueError, zlib.error, json.JSONDecodeError):
                 stream_metrics = {}
     previous_mi = 0.0
+    plan_stops = plan_bundle.get('stops') or []
+    plan_total_elevation_ft = (plan_bundle.get('plan') or {}).get('total_elevation_ft')
     event = models.get_brevet_event_full(submission['event_id']) or submission
     official_start = _official_start(event)
 
@@ -158,22 +175,55 @@ def _validation_visualization(submission):
     power_stream = stream_metrics.get('watts') or []
     time_stream = stream_metrics.get('time') or []
     for stop in plan_bundle.get('stops') or []:
-        # The organizer comparison is control-by-control. Rest stops and
-        # waypoints are useful in the full plan, but do not create validation
-        # segments of their own.
-        if str(stop.get('stop_type') or '').lower() != 'control':
+        # Keep this table focused on official controls and the finish. Food,
+        # water, rest, waypoint, and generated meal rows belong in the full
+        # route evidence view, not this control comparison.
+        if str(stop.get('stop_type') or '').lower() not in ('control', 'finish'):
             continue
         end_mi = float(stop.get('distance_miles') or 0)
         start_mi = previous_mi
         previous_mi = end_mi
         segment_points = [p for p in track if start_mi * 1609.344 <= p['distance_m'] <= end_mi * 1609.344]
         if len(segment_points) >= 2:
-            elapsed_s = max(0, (segment_points[-1]['timestamp'] - segment_points[0]['timestamp']).total_seconds())
+            # Use the earliest sample at the control to represent arrival.
+            # A rider may remain stationary for hours (especially at an
+            # overnight control), so using the last sample in the segment
+            # would incorrectly report the departure time as the arrival.
+            control_m = end_mi * 1609.344
+            # Match the activity to the official route coordinate at this
+            # control, as the Team Asha analysis does. Cumulative GPS distance
+            # can keep increasing after a rider reaches a control, especially
+            # during an overnight stop, which otherwise selects the departure.
+            # Use the same route-mile resolver as the validator and allow a
+            # modest GPS/route mismatch (3 km). The first geographic hit is the
+            # arrival; later points at the same control are the departure.
+            target = _route_point_for_mile(route, end_mi)
+            nearby = [(i, point) for i, point in enumerate(segment_points)
+                      if target and geo_distance_m(point['lat'], point['lng'], target['lat'], target['lng']) <= 3000]
+            if nearby:
+                arrival_index, arrival_point = min(nearby, key=lambda item: item[1]['timestamp'])
+            else:
+                # If a recording took a documented detour around the control,
+                # geographic proximity is still a better arrival signal than
+                # cumulative distance (which often lands on the post-stop
+                # departure sample).
+                if target:
+                    arrival_index, arrival_point = min(
+                        enumerate(segment_points),
+                        key=lambda item: (geo_distance_m(item[1]['lat'], item[1]['lng'], target['lat'], target['lng']), item[1]['timestamp']),
+                    )
+                else:
+                    arrival_index, arrival_point = min(
+                        enumerate(segment_points),
+                        key=lambda item: (abs(item[1]['distance_m'] - control_m), item[1]['timestamp']),
+                    )
+            elapsed_points = segment_points[:arrival_index + 1]
+            elapsed_s = max(0, (arrival_point['timestamp'] - segment_points[0]['timestamp']).total_seconds())
             moving_s = sum(max(0, (b['timestamp'] - a['timestamp']).total_seconds())
-                           for a, b in zip(segment_points, segment_points[1:]) if b.get('speed_mph', 0) >= 1)
-            moving_distance_m = max(0, segment_points[-1]['distance_m'] - segment_points[0]['distance_m'])
+                           for a, b in zip(elapsed_points, elapsed_points[1:]) if b.get('speed_mph', 0) >= 1)
+            moving_distance_m = max(0, elapsed_points[-1]['distance_m'] - elapsed_points[0]['distance_m'])
             avg_speed = moving_distance_m / max(1, moving_s) * 2.236936
-            actual_elapsed_min = ((segment_points[-1]['timestamp'] - official_start).total_seconds() / 60
+            actual_elapsed_min = ((arrival_point['timestamp'] - official_start).total_seconds() / 60
                                   if official_start else None)
         else:
             elapsed_s = moving_s = 0
@@ -185,13 +235,32 @@ def _validation_visualization(submission):
         avg_power = (sum(float(power_stream[i]) for i in stream_values if i < len(power_stream) and power_stream[i] is not None) /
                      max(1, sum(1 for i in stream_values if i < len(power_stream) and power_stream[i] is not None))) if stream_values else None
         wind_values = [s['headwind_mph'] for s in samples if start_mi <= s['distance_mi'] <= end_mi and s.get('headwind_mph') is not None]
+        # Compute climb from the complete official RWGPS geometry between the
+        # two controls. The persisted stop gain is attached to the prior plan
+        # stop, so using only the control row (or only a rest row) silently drops
+        # control-to-control climbs whenever intermediate stops are present.
+        official_route_segment = [p for p in route
+                                  if start_mi * 1609.344 <= float(p.get('dist_m') or 0) <= end_mi * 1609.344]
+        route_gain_ft = sum(max(0.0, float(b.get('e_m') or 0) - float(a.get('e_m') or 0))
+                            for a, b in zip(official_route_segment, official_route_segment[1:])) * 3.28084
+        if len(official_route_segment) >= 2 and route_gain_ft > 0:
+            segment_elevation_ft = round(route_gain_ft)
+        else:
+            # Legacy plans may not have a complete route track. In that case,
+            # include every persisted stop in this interval as a safe fallback.
+            interval_stops = [s for s in plan_stops
+                              if start_mi < float(s.get('distance_miles') or 0) <= end_mi + 0.05]
+            segment_elevation_ft = round(sum(float(s.get('elevation_gain') or 0) for s in interval_stops))
+        terrain_ft_per_mile = round(segment_elevation_ft / max(end_mi - start_mi, 0.1))
         segment_rows.append({
-            'order': stop.get('stop_order'), 'control': stop.get('location') or stop.get('notes') or 'Control',
+            'order': stop.get('stop_order'), 'stop_type': str(stop.get('stop_type') or '').lower(),
+            'control': stop.get('location') or stop.get('notes') or 'Control',
             'distance_mi': round(end_mi, 1), 'segment_mi': round(max(0, end_mi - start_mi), 1),
             'cutoff': fmt_minutes(stop.get('bookend_time_min')),
             'cutoff_pt': fmt_pacific_clock(stop.get('bookend_time_min')),
-            'plan_bank': fmt_minutes(stop.get('time_bank_min')),
-            'ft_per_mile': round(float(stop.get('ft_per_mi') or 0)),
+            'open_pt': fmt_pacific_clock(control_open_time_minutes(end_mi)),
+            'segment_elevation_ft': segment_elevation_ft,
+            'ft_per_mile': terrain_ft_per_mile,
             'headwind_mph': round(sum(wind_values) / len(wind_values), 1) if wind_values else None,
             'speed_mph': round(avg_speed, 1) if avg_speed is not None else None,
             'elapsed': fmt_minutes(elapsed_s / 60) if elapsed_s else '—',
@@ -201,6 +270,32 @@ def _validation_visualization(submission):
             'power': round(avg_power) if avg_power is not None else None,
             'actual_bank': fmt_minutes(float(stop.get('bookend_time_min')) - actual_elapsed_min) if actual_elapsed_min is not None and stop.get('bookend_time_min') is not None else '—',
         })
+    # Sanity check the displayed control intervals against the persisted route
+    # total.  Rounding should be only a few feet; a larger mismatch means an old
+    # plan omitted intermediate stop intervals.  Normalize the displayed rows so
+    # the segment column always reconciles to the ride-level climb.
+    if plan_total_elevation_ft and segment_rows:
+        expected_total = round(float(plan_total_elevation_ft))
+        displayed_total = sum(int(row.get('segment_elevation_ft') or 0) for row in segment_rows)
+        if displayed_total and abs(displayed_total - expected_total) > 1:
+            ratio = expected_total / displayed_total
+            for row in segment_rows:
+                row['segment_elevation_ft'] = round((row.get('segment_elevation_ft') or 0) * ratio)
+                row['ft_per_mile'] = round(row['segment_elevation_ft'] / max(row['segment_mi'], 0.1))
+            residual = expected_total - sum(int(row.get('segment_elevation_ft') or 0) for row in segment_rows)
+            segment_rows[-1]['segment_elevation_ft'] += residual
+            segment_rows[-1]['ft_per_mile'] = round(segment_rows[-1]['segment_elevation_ft'] / max(segment_rows[-1]['segment_mi'], 0.1))
+        elif not displayed_total and expected_total > 0:
+            # If neither geometry nor legacy stop rows had usable elevation,
+            # preserve the route total by distributing it over the intervals.
+            total_miles = sum(float(row.get('segment_mi') or 0) for row in segment_rows)
+            if total_miles > 0:
+                for row in segment_rows:
+                    row['segment_elevation_ft'] = round(expected_total * float(row['segment_mi']) / total_miles)
+                    row['ft_per_mile'] = round(row['segment_elevation_ft'] / max(row['segment_mi'], 0.1))
+                residual = expected_total - sum(int(row.get('segment_elevation_ft') or 0) for row in segment_rows)
+                segment_rows[-1]['segment_elevation_ft'] += residual
+                segment_rows[-1]['ft_per_mile'] = round(segment_rows[-1]['segment_elevation_ft'] / max(segment_rows[-1]['segment_mi'], 0.1))
     # Leave a predictable plot box for the organizer chart: the template adds
     # a 76px left gutter for labels and a small top gutter for the title.
     chart_w, chart_h = 974, 282
@@ -208,17 +303,18 @@ def _validation_visualization(submission):
     max_speed = max((s['speed_mph'] for s in samples), default=1) or 1
     max_elevation = max((s['elevation_ft'] for s in samples), default=1) or 1
     max_wind = max((abs(s['headwind_mph']) for s in samples if s.get('headwind_mph') is not None), default=1) or 1
+    max_mph = max(max_speed, max_wind) or 1
     def path_for(key, maximum, baseline=chart_h):
         # Wind is signed, so reserve the upper/lower halves around a visible
         # zero line instead of letting negative values run outside the SVG.
         span = (chart_h / 2) - 12 if baseline != chart_h else chart_h - 20
         return ' '.join(f"{(s['distance_mi'] / max_distance) * chart_w:.1f},{baseline - (float(s.get(key) or 0) / maximum) * span:.1f}" for s in samples)
     chart = {
-        'speed_path': path_for('speed_mph', max_speed),
+        'speed_path': path_for('speed_mph', max_mph),
         'elevation_path': path_for('elevation_ft', max_elevation),
-        'wind_path': path_for('headwind_mph', max_wind, chart_h / 2),
+        'wind_path': path_for('wind_magnitude_mph', max_mph),
         'max_distance': max_distance,
-        'max_speed': max_speed,
+        'max_speed': max_mph,
         'max_elevation': max_elevation,
         'max_wind': max_wind,
         'anomalies': [{'x': round((s['distance_mi'] / max_distance) * chart_w, 1),
@@ -354,6 +450,10 @@ def _points_from_cached_strava(row, started_at):
     if not row or not row.get('activity_streams'):
         raise ValueError('That Strava activity has no cached streams. Analyze it first.')
     streams = json.loads(zlib.decompress(bytes(row['activity_streams'])))
+    return _points_from_strava_streams(streams, started_at)
+
+
+def _points_from_strava_streams(streams, started_at):
     latlng, seconds = streams.get('latlng') or [], streams.get('time') or []
     elevation = streams.get('altitude') or []
     if len(latlng) < 2 or len(seconds) != len(latlng):
@@ -370,6 +470,79 @@ def _points_from_cached_strava(row, started_at):
                                  float(pair[0]), float(pair[1]),
                                  elevation[idx] if idx < len(elevation) else None))
     return combine_recordings([points])
+
+
+def _deferred_validation_points(submission):
+    """Load the persisted track, or hydrate a deferred Strava track on review."""
+    raw_track = submission.get('normalized_track') or []
+    if len(raw_track) >= 2:
+        points = []
+        for row in raw_track:
+            if len(row) < 3:
+                continue
+            try:
+                points.append(TrackPoint(
+                    datetime.fromisoformat(str(row[2]).replace('Z', '+00:00')),
+                    float(row[0]), float(row[1]),
+                    float(row[3]) if len(row) > 3 and row[3] is not None else None,
+                ))
+            except (TypeError, ValueError):
+                continue
+        if len(points) >= 2:
+            return combine_recordings([points]), dict(submission.get('source_metadata') or {})
+
+    activity_id = submission.get('strava_activity_id')
+    if not activity_id:
+        return [], dict(submission.get('source_metadata') or {})
+    metadata = dict(submission.get('source_metadata') or {})
+    started_at = metadata.get('strava_activity_started_at')
+    if not started_at:
+        event = {'date': submission.get('event_date'), 'start_time': submission.get('start_time'),
+                 'region': submission.get('region')}
+        official = _official_start(event)
+        started_at = official.isoformat() if official else None
+    cached = models.get_ride_analysis(submission['rider_id'], int(activity_id))
+    if cached and cached.get('activity_streams') and started_at:
+        return _points_from_cached_strava(cached, started_at), metadata
+    connection = models.get_strava_connection(submission['rider_id'])
+    if not connection or not started_at:
+        raise ValueError('The submitted Strava activity could not be hydrated. Ask the rider for a FIT/GPX file.')
+    streams = fetch_activity_streams(
+        _valid_access_token(submission['rider_id'], connection), int(activity_id),
+        api_base=current_app.config['STRAVA_API_BASE'],
+    )
+    metadata['strava_stream_fetched'] = True
+    return _points_from_strava_streams(streams, started_at), metadata
+
+
+def _analyze_deferred_submission(submission):
+    """Run the expensive validation only when an organizer opens the record."""
+    points, metadata = _deferred_validation_points(submission)
+    event = dict(submission)
+    event['date'] = submission['event_date']
+    plan = models.get_brevet_route_plan_with_stops(submission['event_id']) or {'plan': {}, 'stops': []}
+    route_id = (plan.get('plan') or {}).get('rwgps_route_id')
+    route = models.get_rp_route_elevation_track(route_id) if route_id else []
+    if not route:
+        official_route_id = extract_rwgps_route_id(submission.get('rwgps_url') or '')
+        if official_route_id and str(official_route_id) != str(route_id):
+            route = models.get_rp_route_elevation_track(official_route_id) or []
+    evidence = models.get_validation_evidence(submission['id'])
+    evidence_orders = {int(order) for row in evidence for order in (row.get('control_orders') or [])}
+    traditional = any(row.get('evidence_kind') == 'traditional' for row in evidence)
+    conflicts = models.find_validation_evidence_conflicts(
+        [row.get('sha256') for row in evidence], event_id=submission['event_id'],
+        rider_id=submission['rider_id'], strava_activity_id=submission.get('strava_activity_id'))
+    decision, checks = validate_submission(
+        points=points, route=route or [], controls=plan.get('stops') or [], event=event,
+        official_start=_official_start(event), evidence_control_orders=evidence_orders,
+        source_metadata=metadata, duplicate_conflicts=[dict(row) for row in conflicts],
+        has_traditional_evidence=traditional,
+    )
+    metadata.pop('validation_pending', None)
+    models.update_validation_analysis_input(
+        submission['id'], normalized_track=_track_json(points), source_metadata=metadata)
+    models.replace_validation_checks(submission['id'], decision, checks)
 
 
 @admin_bp.route('/validations', methods=['GET'])
@@ -506,10 +679,20 @@ def validation_detail(submission_id):
     submission = models.get_validation_submission(submission_id)
     if not submission:
         abort(404)
+    checks = models.get_validation_checks(submission_id)
+    if not checks and not submission.get('organizer_decision'):
+        try:
+            _analyze_deferred_submission(submission)
+            submission = models.get_validation_submission(submission_id)
+            checks = models.get_validation_checks(submission_id)
+        except Exception as exc:
+            current_app.logger.warning('Deferred validation failed for submission %s: %s', submission_id, exc)
+            flash('Validation analysis could not be completed yet. The submission is saved; try opening it again.', 'error')
     return render_template('admin/validation_detail.html', submission=submission,
-                           checks=models.get_validation_checks(submission_id),
+                           checks=checks,
                            evidence=models.get_validation_evidence(submission_id),
-                           visualization=_validation_visualization(submission))
+                           visualization=_validation_visualization(submission),
+                           mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN', ''))
 
 
 @admin_bp.route('/validations/<int:submission_id>/evidence/<int:evidence_id>', methods=['GET'])

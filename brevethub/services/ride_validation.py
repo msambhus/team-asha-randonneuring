@@ -148,12 +148,55 @@ def fingerprint(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _nearest(point: TrackPoint, route: list[dict]) -> tuple[float, int]:
+def _sample_points(points, maximum):
+    """Return evenly spaced points, always retaining both endpoints."""
+    if len(points) <= maximum:
+        return points
+    indexes = sorted({round(i * (len(points) - 1) / (maximum - 1)) for i in range(maximum)})
+    return [points[index] for index in indexes]
+
+
+def _segment_distance(point, start, end):
+    """Distance from a coordinate to a polyline segment in metres.
+
+    Equirectangular projection is accurate at the short distances involved in
+    route matching and, unlike nearest-vertex matching, handles sparse route
+    geometry and bends between stored route points correctly.
+    """
+    lat = math.radians(float(point.lat if hasattr(point, 'lat') else point['lat']))
+    lng = math.radians(float(point.lng if hasattr(point, 'lng') else point['lng']))
+
+    def xy(value):
+        value_lat = math.radians(float(value.lat if hasattr(value, 'lat') else value['lat']))
+        value_lng = math.radians(float(value.lng if hasattr(value, 'lng') else value['lng']))
+        return ((value_lng - lng) * math.cos(lat) * EARTH_M,
+                (value_lat - lat) * EARTH_M)
+
+    ax, ay = xy(start)
+    bx, by = xy(end)
+    dx, dy = bx - ax, by - ay
+    length_sq = dx * dx + dy * dy
+    if length_sq:
+        t = max(0.0, min(1.0, -(ax * dx + ay * dy) / length_sq))
+        closest_x, closest_y = ax + t * dx, ay + t * dy
+    else:
+        closest_x, closest_y = ax, ay
+    return math.hypot(closest_x, closest_y)
+
+
+def _nearest_polyline(point, route):
+    """Return distance and segment index for the nearest route segment."""
+    if not route:
+        return float('inf'), -1
+    if len(route) == 1:
+        route_point = route[0]
+        return haversine((point.lat, point.lng),
+                         (float(route_point['lat']), float(route_point['lng']))), 0
     best = (float('inf'), -1)
-    for idx, route_point in enumerate(route):
-        dist = haversine((point.lat, point.lng), (float(route_point['lat']), float(route_point['lng'])))
-        if dist < best[0]:
-            best = (dist, idx)
+    for idx, (start, end) in enumerate(zip(route, route[1:])):
+        distance = _segment_distance(point, start, end)
+        if distance < best[0]:
+            best = (distance, idx)
     return best
 
 
@@ -264,11 +307,14 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
                           'missing_orders': missing_evidence}, missing_locations))
 
     if route:
-        activity_sample = points[::max(1, len(points) // 2000)]
-        official_sample = route[::max(1, len(route) // 500)]
+        # Keep enough samples to catch short departures, but compare against
+        # route segments rather than route vertices so sparse RWGPS geometry
+        # cannot manufacture a false departure or hide a real one.
+        activity_sample = _sample_points(points, 4000)
+        official_sample = _sample_points(route, 1200)
         off, off_distances, nearest_indexes = [], [], []
         for p in activity_sample:
-            distance, nearest_idx = _nearest(p, official_sample)
+            distance, nearest_idx = _nearest_polyline(p, official_sample)
             nearest_indexes.append(nearest_idx)
             if distance > CORRIDOR_M:
                 off.append(p)
@@ -276,7 +322,7 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
         coverage_hits = 0
         for rp in official_sample:
             probe = TrackPoint(first.timestamp, float(rp['lat']), float(rp['lng']))
-            if _nearest(probe, [{'lat': p.lat, 'lng': p.lng} for p in activity_sample])[0] <= CORRIDOR_M:
+            if _nearest_polyline(probe, activity_sample)[0] <= CORRIDOR_M:
                 coverage_hits += 1
         coverage = coverage_hits / max(1, len(official_sample))
         route_ok = coverage >= .95
@@ -294,7 +340,7 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
         meaningful_groups = []
         for group in departure_groups:
             distances = [
-                _nearest(activity_sample[i], official_sample)[0] for i in group
+                _nearest_polyline(activity_sample[i], official_sample)[0] for i in group
             ]
             # Two adjacent samples that immediately return to the route are
             # ordinary GPS jitter, not an actionable detour.
@@ -316,7 +362,11 @@ def validate_submission(*, points: list[TrackPoint], route: list[dict], controls
             before = max(0, group[0] - 1)
             after = min(len(nearest_indexes) - 1, group[-1] + 1)
             route_delta = abs(nearest_indexes[after] - nearest_indexes[before])
+            start_mile = float(activity_sample[group[0]].distance_m or 0) / 1609.344
+            end_mile = float(activity_sample[group[-1]].distance_m or 0) / 1609.344
             departure_runs.append({'samples': len(group),
+                                   'start_mile': round(start_mile, 1),
+                                   'end_mile': round(end_mile, 1),
                                    'returned_near_entry': route_delta <= 3})
         checks.append(_check('route_departures', 'Route departures', 'needs_review' if meaningful_groups else 'clear',
                              f'{len(departure_runs)} route departure(s) need review for an authorized detour and return to the departure point.' if meaningful_groups else 'No material route departure was found.',

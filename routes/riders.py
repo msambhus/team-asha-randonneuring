@@ -48,6 +48,7 @@ from shared.strava_analysis_index import ride_card, season_group
 from shared.calendar_view import calendar_event, completed_event, finisher_row
 from shared.calendar_view import group_events_by_month
 from shared.rider_directory_view import public_rider_row
+from shared.rider_distance import canonical_distance_km, special_distance_km
 from services.fitness import (calculate_fitness_score, score_all_activities,
                               assess_readiness, generate_training_advice)
 from services.openai_coach import generate_openai_advice
@@ -80,7 +81,12 @@ def season_riders(season_name):
             abort(404)
 
         riders_all = get_riders_for_season(season['id'])
-        rides = get_rides_for_season(season['id'])
+        rides = []
+        for raw_ride in get_rides_for_season(season['id']):
+            ride = dict(raw_ride)
+            ride['distance_km'] = canonical_distance_km(
+                ride.get('distance_km'), ride.get('name'))
+            rides.append(ride)
         matrix = get_participation_matrix(season['id'])
         current = get_current_season()
         is_current = current and current['id'] == season['id']
@@ -106,17 +112,19 @@ def season_riders(season_name):
         for r in riders:
             s = all_stats.get(r['id'], {'rides': 0, 'kms': 0})
             sr_n = all_srs.get(r['id'], 0)
-            rides_count = s['rides']
-            kms_count = s['kms']
-
-            # For current season, only count past ride completions
-            if is_current:
-                past_ride_ids = {pr['id'] for pr in past_rides}
-                part = matrix.get(r['id'], {})
-                rides_count = sum(1 for rid, p in part.items()
-                                 if rid in past_ride_ids and p['status'] == 'FINISHED')
-                kms_count = sum(ri['distance_km'] for ri in past_rides
-                               if ri['id'] in part and part[ri['id']]['status'] == 'FINISHED')
+            # Recompute display totals from canonical ride distances so an
+            # imported 1000K/1200K does not remain a stale 600K in summaries.
+            past_ride_ids = {pr['id'] for pr in past_rides}
+            part = matrix.get(r['id'], {})
+            rides_count = sum(
+                1 for rid, p in part.items()
+                if (not is_current or rid in past_ride_ids)
+                and p['status'] == 'FINISHED')
+            kms_count = sum(
+                ri['distance_km'] for ri in rides
+                if ri['id'] in part
+                and (not is_current or ri['id'] in past_ride_ids)
+                and part[ri['id']]['status'] == 'FINISHED')
 
             if rides_count > 0 or not is_current:
                 rider_data.append({
@@ -137,6 +145,14 @@ def season_riders(season_name):
             (matrix.get(rid, {}).get(r['id'], {}).get('status') or '').upper() in ('FINISHED', 'OTL')
             for rid in displayed_rider_ids
         )]
+
+        stats['total_kms'] = sum(
+            ride['distance_km'] for ride in past_rides
+            if any(
+                (matrix.get(rid, {}).get(ride['id'], {}).get('status') or '').upper() == 'FINISHED'
+                for rid in displayed_rider_ids
+            )
+        )
 
         label = SEASON_LABELS.get(season_name, f'{season_name} Season')
 
@@ -295,6 +311,58 @@ def _fetch_plan_stop_wind(plan, stops, forecast_date, start_time_str,
         for index, wind in zip(indexes, leg_winds):
             winds[index] = wind
     return winds
+
+
+def _get_plan_elevation_track(plan, fallback_route_id=None):
+    """Load and concatenate cached elevation tracks for every plan leg.
+
+    Multi-day plans store one RWGPS route per leg.  The Journey explorer needs
+    one distance-continuous track, while each cached leg starts at distance 0.
+    Geometry remains cache-only here; the warming cron is responsible for
+    populating ``route_geometry_cache``.
+    """
+    from models import get_ride_plan_legs
+
+    try:
+        legs = [dict(row) for row in (get_ride_plan_legs(plan['id']) or [])]
+    except Exception:
+        legs = []
+    route_ids = []
+    for leg in legs:
+        route_id = _extract_rwgps_route_id(leg.get('rwgps_url'))
+        if route_id and route_id not in route_ids:
+            route_ids.append(route_id)
+    if not route_ids and fallback_route_id:
+        route_ids = [fallback_route_id]
+
+    combined = []
+    distance_offset = 0.0
+    for route_id in route_ids:
+        try:
+            track = get_route_elevation_track(route_id) or []
+        except Exception:
+            current_app.logger.exception(
+                "elevation track read failed for route %s", route_id)
+            continue
+        if len(track) < 2:
+            continue
+        try:
+            first_distance = float(track[0].get('dist_m') or 0)
+        except (TypeError, ValueError, AttributeError):
+            first_distance = 0.0
+        for index, point in enumerate(track):
+            if index == 0 and combined:
+                continue
+            try:
+                local_distance = float(point.get('dist_m') or 0) - first_distance
+            except (TypeError, ValueError, AttributeError):
+                continue
+            merged = dict(point)
+            merged['dist_m'] = distance_offset + max(0.0, local_distance)
+            combined.append(merged)
+        if combined:
+            distance_offset = float(combined[-1].get('dist_m') or distance_offset)
+    return combined
 
 
 _CUTOFF_HOURS = {200: 13.5, 300: 20, 400: 27, 600: 40, 1000: 75, 1200: 90}
@@ -902,24 +970,38 @@ def rider_profile(rusa_id):
     season_data = []
     career_rides = 0
     career_kms = 0
+    special_distance_counts = {1000: 0, 1200: 0}
 
     for s in seasons:
-        participation = get_rider_participation(rider['id'], s['id'])
-        stats = get_rider_season_stats(rider['id'], s['id'])
+        participation = [dict(p) for p in get_rider_participation(rider['id'], s['id'])]
+        for p in participation:
+            p['distance_km'] = canonical_distance_km(
+                p.get('distance_km'), p.get('ride_name'))
         is_cur = current and current['id'] == s['id']
         sr_n = detect_sr_for_rider_season(rider['id'], s['id'], date_filter=is_cur)
+        finished = [p for p in participation
+                    if str(p.get('status') or '').upper() == 'FINISHED']
+        normalized_kms = sum(p.get('distance_km') or 0 for p in finished)
+        for p in finished:
+            special = special_distance_km(p.get('distance_km'), p.get('ride_name'))
+            # PBP is already represented by its own achievement tile. A PBP
+            # result should not also appear as a generic 1200K Grand Randonnée.
+            if special and not (
+                special == 1200 and str(p.get('ride_type') or '').upper() == 'PBP'
+            ):
+                special_distance_counts[special] += 1
 
         if participation:
             season_data.append({
                 'season': s,
                 'participation': participation,
-                'rides': stats['rides'],
-                'kms': stats['kms'],
+                'rides': len(finished),
+                'kms': normalized_kms,
                 'sr_count': sr_n,
                 'is_current': is_cur,
             })
-            career_rides += stats['rides']
-            career_kms += stats['kms']
+            career_rides += len(finished)
+            career_kms += normalized_kms
 
     total_srs = get_rider_total_srs(rider['id'])
 
@@ -930,51 +1012,42 @@ def rider_profile(rusa_id):
     r12_years = set(a['end_year'] for a in r12_awards)
 
     # --- Strava training data ---
-    strava_connection = None
+    strava_connection = get_strava_connection(rider['id'])
     training_rides = []
     fitness_score = None
     has_strava = False
     activities = []
     eddington_data = None
 
-    # Only load Strava data if it should be visible
-    if strava_connection and show_strava_data:
-        has_strava = True
-        activities = get_strava_activities(rider['id'], days=28)
-        if activities:
-            fitness_score = calculate_fitness_score(activities)
-            training_rides = score_all_activities(activities)
+    # Eddington is a public aggregate score, while the underlying Strava
+    # activities remain private. Build this from the stored connection and
+    # cached activities even when private training details are disabled.
+    if strava_connection:
+        from services.eddington import (
+            calculate_eddington_number, get_eddington_progress,
+            get_eddington_targets, get_eddington_badge_level,
+        )
+        from models import get_all_strava_activities_for_eddington
 
-        # Get Eddington number and progress
-        if strava_connection.get('eddington_number_miles'):
-            from services.eddington import (
-                calculate_eddington_number, get_eddington_progress,
-                get_eddington_targets, get_eddington_badge_level,
-            )
-            from models import get_all_strava_activities_for_eddington
+        eddington_miles = strava_connection.get('eddington_number_miles') or 0
+        eddington_km = strava_connection.get('eddington_number_km') or 0
+        all_activities = get_all_strava_activities_for_eddington(rider['id'])
 
-            eddington_miles = strava_connection.get('eddington_number_miles', 0)
-            eddington_km = strava_connection.get('eddington_number_km', 0)
+        if all_activities:
+            live_miles = calculate_eddington_number(all_activities, unit='miles')
+            live_km = calculate_eddington_number(all_activities, unit='km')
+            if live_miles > eddington_miles:
+                eddington_miles = live_miles
+                eddington_km = live_km
 
-            # Get all activities for progress calculation
-            all_activities = get_all_strava_activities_for_eddington(rider['id'])
-
-            # Recalculate from activities if stored value looks stale
-            if all_activities:
-                live_miles = calculate_eddington_number(all_activities, unit='miles')
-                live_km = calculate_eddington_number(all_activities, unit='km')
-                if live_miles > eddington_miles:
-                    eddington_miles = live_miles
-                    eddington_km = live_km
-
-            # Calculate progress towards next milestone
-            progress_miles = get_eddington_progress(all_activities, eddington_miles, unit='miles')
+        if eddington_miles:
+            progress_miles = get_eddington_progress(
+                all_activities, eddington_miles, unit='miles')
             badge = get_eddington_badge_level(eddington_miles)
-
-            # Targets up to E100
             max_t = max(100 - eddington_miles, 1)
-            targets = get_eddington_targets(all_activities, eddington_miles, unit='miles', max_targets=max_t)
-
+            targets = get_eddington_targets(
+                all_activities, eddington_miles,
+                unit='miles', max_targets=max_t)
             eddington_data = {
                 'miles': eddington_miles,
                 'km': eddington_km,
@@ -982,6 +1055,14 @@ def rider_profile(rusa_id):
                 'badge': badge,
                 'targets': targets,
             }
+
+    # Only load detailed Strava training data when the viewer owns the profile.
+    if strava_connection and show_strava_data:
+        has_strava = True
+        activities = get_strava_activities(rider['id'], days=28)
+        if activities:
+            fitness_score = calculate_fitness_score(activities)
+            training_rides = score_all_activities(activities)
 
     # Load Strava brevet-match data for own profile view
     METERS_PER_MILE = 1609.34
@@ -1111,6 +1192,10 @@ def rider_profile(rusa_id):
                            total_r12s=total_r12s,
                            r12_awards=r12_awards,
                            r12_years=r12_years,
+                           special_distance_counts={
+                               distance: count for distance, count
+                               in special_distance_counts.items() if count
+                           },
                            is_own_profile=False,
                            show_strava_data=show_strava_data)
 
@@ -1756,6 +1841,7 @@ def ride_strava_analysis(rusa_id, ride_id):
                            garmin_recovery=garmin_recovery,
                            strava_recordings=strava_recordings,
                            strava_split_summary=strava_split_summary,
+                           mapbox_token=current_app.config.get('MAPBOX_ACCESS_TOKEN', ''),
                            provider_comparison=provider_comparison)
 
 
@@ -2880,7 +2966,8 @@ def ride_plan_detail(slug):
     # returns {'available': False} and overlay_stop_markers returns [] — the page never
     # 500s (mirrors the wind read above).
     try:
-        elevation_track = get_route_elevation_track(weather_route_id) if weather_route_id else None
+        elevation_track = (_get_plan_elevation_track(plan, weather_route_id)
+                           if weather_route_id else None)
     except Exception:
         current_app.logger.exception("v2 elevation track read failed for plan %s", slug)
         elevation_track = None

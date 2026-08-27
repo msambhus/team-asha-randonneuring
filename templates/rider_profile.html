@@ -100,7 +100,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="hero" style="padding:30px 20px;">
+<div class="hero" style="padding:30px 20px 82px;">
 {% if rider.photo_filename %}
 <img src="{{ url_for('static', filename='riders/' + rider.photo_filename) }}" alt="{{ rider.first_name }} {{ rider.last_name }}" class="w-[100px] h-[100px] md:w-[150px] md:h-[150px] rounded-full object-cover" style="border:4px solid white;margin-bottom:15px;">
 {% endif %}
@@ -117,6 +117,9 @@
 {% if total_r12s > 0 %}
 <div class="stat-card"><div class="number" style="color:#805ad5;">{% if total_r12s > 1 %}R-12*{{ total_r12s }}{% else %}R-12{% endif %}</div><div class="label">Randonneur 12</div></div>
 {% endif %}
+{% for distance, count in special_distance_counts.items() %}
+<div class="stat-card"><div class="number" style="color:#702459;">{{ distance }}K</div><div class="label">Grand Randonnée{% if count > 1 %} ×{{ count }}{% endif %}</div></div>
+{% endfor %}
 {% if rider.pbp_2023_status == 'Yes' %}
 <div class="stat-card"><div class="number" style="font-size:1.4rem;"><span class="pbp-badge" style="font-size:1rem;">PBP 2023</span></div><div class="label">Paris-Brest-Paris</div></div>
 {% endif %}

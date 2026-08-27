@@ -1,4 +1,4 @@
-from shared.control_times import MILES_TO_KM, control_close_time_minutes
+from shared.control_times import MILES_TO_KM, control_close_time_minutes, control_open_time_minutes
 
 
 def _miles(km):
@@ -26,3 +26,9 @@ def test_kilometre_callers_can_select_km_units():
 
 def test_shorter_plans_keep_existing_linear_behavior():
     assert control_close_time_minutes(100, 200, 20, 300) == 600
+
+
+def test_opening_uses_official_maximum_arrival_rates():
+    assert control_open_time_minutes(0, 'km') == 0
+    assert control_open_time_minutes(200, 'km') == round((200 / 34) * 60)
+    assert control_open_time_minutes(600, 'km') == round((200 / 34 + 200 / 32 + 200 / 30) * 60)

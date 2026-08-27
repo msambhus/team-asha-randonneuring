@@ -1,0 +1,32 @@
+{
+  "decision": "PASS",
+  "proof_ceiling": "STATIC_ONLY",
+  "findings": [
+    {
+      "id": "RT-001",
+      "lens": "scope",
+      "severity": "medium",
+      "finding": "The request asks for photos but the checkout has only one clearly relevant team image plus rider portraits; external sourcing could add attribution and licensing scope.",
+      "resolution": "Use existing local assets only and treat additional photo sourcing as out of scope unless separately authorized."
+    },
+    {
+      "id": "RT-002",
+      "lens": "security",
+      "severity": "high",
+      "finding": "Allowing the mobile root route without auth must not expose private ride APIs or make private routes reachable.",
+      "resolution": "Gate only the root landing route; keep the existing private route redirects and token-gated rider APIs."
+    },
+    {
+      "id": "RT-003",
+      "lens": "verification",
+      "severity": "medium",
+      "finding": "A static template change alone would not prove the rider-detail symptom is fixed.",
+      "resolution": "Add a focused client contract/render regression and run a real mobile/browser flow where available."
+    }
+  ],
+  "reviewed_claims": [
+    "Web anonymous/authenticated split is achievable with existing session context and cache key separation.",
+    "Mobile anonymous root access can be isolated in the current Expo Router auth gate.",
+    "The public rider API already has a brevet-only server contract and tests."
+  ]
+}

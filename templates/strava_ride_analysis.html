@@ -3,6 +3,7 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% if mapbox_token %}<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" /><script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>{% endif %}
 <style>
 /* Ride map */
 #rideMap { height: clamp(440px, 68vh, 720px); border-radius: 10px; z-index: 0; }
@@ -1315,6 +1316,7 @@
     // lat/lng map_data the main #rideMap uses: the full track (faint) + the
     // selected leg/stop (bold) over actual streets.
     var mapData = {{ map_data|tojson }};
+    var MAPBOX_TOKEN = {{ (mapbox_token or '')|tojson }};
     var overlay = document.getElementById('segMapOverlay');
     if (!overlay || !mapData || !mapData.track || mapData.track.length < 2) return;
 
@@ -1336,11 +1338,12 @@
 
     // ---- Single live Leaflet instance shared across both surfaces ----------
     // Only one map is ever alive (single-instance invariant / no eager N maps).
-    var lmap = null, layers = null, mapPane = null;
+    var lmap = null, gmap = null, layers = null, mapPane = null;
 
     function destroyMap() {
         if (lmap) lmap.remove();
-        lmap = null; layers = null; mapPane = null;
+        if (gmap) gmap.remove();
+        lmap = null; gmap = null; layers = null; mapPane = null;
     }
 
     function drawSelection(key, isStop) {
@@ -1372,6 +1375,22 @@
         if (titleEl) titleEl.textContent = label || '';
         requestAnimationFrame(function () {
             if (mapPane !== pane) return;   // superseded/hidden before this frame
+            if (MAPBOX_TOKEN && typeof mapboxgl !== 'undefined') {
+                mapboxgl.accessToken = MAPBOX_TOKEN;
+                gmap = new mapboxgl.Map({container:pane,style:'mapbox://styles/mapbox/standard',config:{basemap:{lightPreset:'day',theme:'default',show3dObjects:false,showPointOfInterestLabels:true,showRoadLabels:true,showPlaceLabels:true}},scrollZoom:false});
+                gmap.addControl(new mapboxgl.NavigationControl({showCompass:false}),'top-right');
+                gmap.on('load', function(){
+                    var bounds = new mapboxgl.LngLatBounds();
+                    function line(id, pts, color, width, opacity){if(!pts||pts.length<2)return;var c=pts.map(function(p){return [p[1],p[0]];});c.forEach(function(x){bounds.extend(x);});gmap.addSource(id,{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:c}}});gmap.addLayer({id:id,type:'line',source:id,paint:{'line-color':color,'line-width':width,'line-opacity':opacity}});}
+                    line('analysis-track',mapData.track,'#cbd5e1',3,.8);
+                    var focus = !isStop && segByLoc[key] ? segByLoc[key].points : null;
+                    line('analysis-focus',focus,'#c2410c',5,.95);
+                    var target = isStop && stopByDist[key] ? [stopByDist[key].lng,stopByDist[key].lat] : (focus ? [focus[focus.length-1][1],focus[focus.length-1][0]] : null);
+                    if(target){var el=document.createElement('div');el.style.cssText='width:14px;height:14px;border:2px solid #fff;background:#dc2626;border-radius:50%;box-shadow:0 1px 4px #334155';new mapboxgl.Marker({element:el}).setLngLat(target).addTo(gmap);}
+                    if(!bounds.isEmpty())gmap.fitBounds(bounds,{padding:30,maxZoom:15});else gmap.setCenter([-98,39]).setZoom(4);
+                });
+                return;
+            }
             lmap = L.map(pane, { scrollWheelZoom: false });
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 18, attribution: '&copy; OpenStreetMap contributors',

@@ -177,36 +177,11 @@ def submit_validation(event_id):
             flash('Enter a Strava activity URL containing its numeric activity id.', 'error')
             return _render_form(event, 400, request.form)
     if strava_id:
-        try:
-            official = _official_start(event)
-            if not official:
-                raise ValueError('This brevet has no official start time yet.')
-            stats_activities = (load_strava_section(rider).get('stats') or {}).get('evidence_activities') or []
-            activity = next((a for a in stats_activities
-                             if str(a.get('strava_activity_id')) == str(strava_id)), None)
-            if activity is None:
-                # URL submissions may refer to an older activity that is not in
-                # the one-year picker. It is still safe to retain the pointer;
-                # the organizer can request additional proof rather than letting
-                # an unverified activity through the ownership gate.
-                metadata['strava_stream_pending'] = True
-            else:
-                points, _ = _fetch_selected_strava_recording(
-                    rider, int(strava_id), activity, event)
-                recordings.append(points)
-                metadata['strava_stream_fetched'] = True
-                metadata['strava_activity_name'] = activity.get('name')
-                metadata['strava_activity_started_at'] = activity.get('start_date') or activity.get('start_date_local')
-            metadata['strava_activity_url'] = strava_url or f'https://www.strava.com/activities/{strava_id}'
-        except Exception as exc:
-            # Preserve the submission pointer when Strava is temporarily
-            # unavailable. The organizer sees the linked activity and can ask
-            # for a FIT/GPX or traditional proof instead of losing the entry.
-            current_app.logger.warning('Strava evidence fetch failed for rider %s activity %s: %s', rider['id'], strava_id, exc)
-            metadata['strava_stream_pending'] = True
-            metadata['strava_fetch_error'] = str(exc)
-            metadata['strava_activity_url'] = strava_url or f'https://www.strava.com/activities/{strava_id}'
-        metadata.update({'format': 'strava_stream', 'source': 'Strava'})
+        # Keep rider submission fast. The private activity stream is fetched
+        # and validated when an organizer first opens the submission.
+        metadata.update({'format': 'strava_stream', 'source': 'Strava',
+                         'validation_pending': True, 'strava_stream_pending': True,
+                         'strava_activity_url': strava_url or f'https://www.strava.com/activities/{strava_id}'})
 
     metadata.update({
         'device': (request.form.get('source_device') or metadata.get('device') or '').strip() or None,
@@ -242,7 +217,7 @@ def submit_validation(event_id):
     # control orders are inferred from whichever row has evidence.
     per_control_notes = []
     for control in (route_plan.get('stops') or []):
-        if control.get('stop_type') in ('start', 'finish'):
+        if control.get('stop_type') != 'control':
             continue
         order = str(control.get('stop_order'))
         row_description = (request.form.get(f'proof_description_{order}') or '').strip()
@@ -274,24 +249,9 @@ def submit_validation(event_id):
         return _render_form(event, 400, request.form)
 
     points = combine_recordings(recordings) if recordings else []
-    route_id = (route_plan.get('plan') or {}).get('rwgps_route_id')
-    route = models.get_rp_route_elevation_track(route_id) if route_id else []
-    # A copied/derived plan can reference a different RWGPS route id than the
-    # official event URL. Prefer warmed official geometry when the plan copy has
-    # not been warmed yet; otherwise route checks falsely report no geometry.
-    if not route:
-        official_route_id = extract_rwgps_route_id(event.get('rwgps_url'))
-        if official_route_id and str(official_route_id) != str(route_id):
-            route = models.get_rp_route_elevation_track(official_route_id) or []
-    hashes = [row[3] for row in file_rows]
-    conflicts = models.find_validation_evidence_conflicts(hashes, event_id=event_id, rider_id=rider['id'],
-                                                           strava_activity_id=int(strava_id) if strava_id else None)
-    decision, checks = validate_submission(
-        points=points, route=route or [], controls=route_plan.get('stops') or [], event=dict(event),
-        official_start=_official_start(event, request.form.get('official_start')),
-        evidence_control_orders=evidence_orders, source_metadata=metadata,
-        duplicate_conflicts=[dict(c) for c in conflicts], has_traditional_evidence=traditional,
-    )
+    # Route matching, duplicate checks, and Strava hydration are deferred until
+    # the organizer opens the validation record.
+    metadata['validation_pending'] = True
     source_type = 'mixed' if recordings and traditional else ('traditional' if traditional and not recordings else ('strava' if strava_id and not file_rows else 'file'))
     created = models.create_validation_submission(
         event_id=event_id, rider_id=rider['id'], submitted_by='rider', source_type=source_type,
@@ -307,6 +267,5 @@ def submit_validation(event_id):
     if proof_description and not any(row[0] == 'traditional' for row in file_rows):
         models.add_validation_evidence(submission_id, evidence_kind='traditional',
                                        control_orders=sorted(evidence_orders), description=proof_description)
-    models.replace_validation_checks(submission_id, decision, checks)
-    flash('Evidence submitted. An organizer will review any flagged items.', 'success')
+    flash('Evidence submitted. Validation will run when an organizer opens it.', 'success')
     return redirect(url_for('validation.my_validations'))

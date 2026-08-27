@@ -2,6 +2,7 @@
    Context: explorer_id, route_points, profile, markers, map_segments, map_stops,
    compact_map (plan/live-sized map). #}
 {% if route_points and route_points|length > 1 %}
+{% if mapbox_token %}<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css"><script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>{% endif %}
 {% set rid = explorer_id or 'route-explorer' %}
 <div class="route-explorer{% if compact_map %} route-explorer-compact{% endif %}" id="{{ rid }}">
     <div class="route-explorer-map" id="{{ rid }}-map"
@@ -47,10 +48,51 @@
     var stops = {{ (map_stops or [])|tojson }};
     var segments = {{ (map_segments or [])|tojson }};
 
+    function initMapbox(root, pane) {
+        var token = {{ (mapbox_token or '')|tojson }};
+        if (!token || typeof mapboxgl === 'undefined') return false;
+        mapboxgl.accessToken = token;
+        var map = new mapboxgl.Map({
+            container: pane,
+            style: 'mapbox://styles/mapbox/standard',
+            config: { basemap: { lightPreset: 'day', theme: 'default', show3dObjects: false,
+                showPointOfInterestLabels: true, showRoadLabels: true, showPlaceLabels: true } },
+            attributionControl: true,
+            scrollZoom: false
+        });
+        map.addControl(new mapboxgl.NavigationControl({showCompass:false}), 'top-right');
+        var coords = points.map(function (p) { return [p[1], p[0]]; });
+        var bounds = coords.reduce(function (b, c) { return b.extend(c); }, new mapboxgl.LngLatBounds(coords[0], coords[0]));
+        var cumulative=[0], radius=6371000, deg=Math.PI/180;
+        function hav(a,b){var la=(b[0]-a[0])*deg,lo=(b[1]-a[1])*deg,q=Math.sin(la/2)**2+Math.cos(a[0]*deg)*Math.cos(b[0]*deg)*Math.sin(lo/2)**2;return 2*radius*Math.asin(Math.min(1,Math.sqrt(q)));}
+        for(var i=1;i<points.length;i++) cumulative[i]=cumulative[i-1]+hav(points[i-1],points[i]);
+        var totalM=cumulative[cumulative.length-1]||1;
+        function atMile(m){var totalMi=(profile&&profile.total_mi)||totalM/1609.344,target=Math.max(0,Math.min(1,m/totalMi))*totalM;for(var i=1;i<cumulative.length;i++){if(target<=cumulative[i]){var span=cumulative[i]-cumulative[i-1],t=span?(target-cumulative[i-1])/span:0;return [points[i-1][1]+t*(points[i][1]-points[i-1][1]),points[i-1][0]+t*(points[i][0]-points[i-1][0])];}}return [points[points.length-1][1],points[points.length-1][0]];}
+        var cursor=document.createElement('div'); cursor.style.cssText='width:14px;height:14px;border:2px solid #0f172a;background:#fff;border-radius:50%;box-sizing:border-box;';
+        var cursorMarker=new mapboxgl.Marker({element:cursor}).setLngLat(coords[0]).addTo(map);
+        map.on('load', function(){
+            map.addSource('route-explorer-route',{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:coords}}});
+            map.addLayer({id:'route-explorer-route',type:'line',source:'route-explorer-route',paint:{'line-color':'#2563eb','line-width':4,'line-opacity':.82}});
+            segments.forEach(function(s,i){if(!s.points||s.points.length<2)return;map.addSource('route-explorer-seg-'+i,{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:s.points.map(function(p){return [p[1],p[0]];})}}});map.addLayer({id:'route-explorer-seg-'+i,type:'line',source:'route-explorer-seg-'+i,paint:{'line-color':'#2563eb','line-width':5,'line-opacity':.9}});});
+            map.fitBounds(bounds,{padding:24,maxZoom:13});
+            stops.forEach(function(stop){var ll=(stop.lat!=null&&stop.lng!=null)?[stop.lng,stop.lat]:atMile(stop.distance_miles||0),el=document.createElement('div');el.style.cssText='width:13px;height:13px;border:2px solid #fff;background:'+(stop.color||'#1d4ed8')+';border-radius:50%;box-shadow:0 1px 3px #475569;cursor:pointer;';var m=new mapboxgl.Marker({element:el}).setLngLat(ll).setPopup(new mapboxgl.Popup({offset:8}).setText((stop.name||stop.location||'Stop')+(stop.distance_miles!=null?' · '+Number(stop.distance_miles).toFixed(1)+' mi':''))).addTo(map);el.addEventListener('click',function(){if(stop.distance_miles!=null)selectMile(stop.distance_miles);root.dispatchEvent(new CustomEvent('route-explorer-stop',{detail:{index:stop.index,stop:stop}}));});});
+        });
+        function profileY(x){var p=profile.points||[];if(!p.length)return 0;for(var i=1;i<p.length;i++){if(x<=p[i][0]){var span=p[i][0]-p[i-1][0],t=span?(x-p[i-1][0])/span:0;return p[i-1][1]+t*(p[i][1]-p[i-1][1]);}}return p[p.length-1][1];}
+        var svg=root.querySelector('.route-explorer-profile svg'), line=null,dot=null;
+        if(svg&&profile.available){var ns='http://www.w3.org/2000/svg';line=document.createElementNS(ns,'line');line.setAttribute('class','route-explorer-cursor-line');dot=document.createElementNS(ns,'circle');dot.setAttribute('class','route-explorer-cursor-dot');dot.setAttribute('r','5');svg.appendChild(line);svg.appendChild(dot);}
+        function selectMile(m,notify){cursorMarker.setLngLat(atMile(m));if(line&&profile.available){var f=Math.max(0,Math.min(1,m/profile.total_mi)),x=profile.plot.x+f*profile.plot.w;line.setAttribute('x1',x);line.setAttribute('x2',x);line.setAttribute('y1',profile.plot.y);line.setAttribute('y2',profile.plot.y+profile.plot.h);dot.setAttribute('cx',x);dot.setAttribute('cy',profileY(x));}if(notify!==false)root.dispatchEvent(new CustomEvent('route-explorer-mile',{detail:{mile:m}}));}
+        root.addEventListener('route-explorer-select-mile',function(e){if(e.detail&&Number.isFinite(Number(e.detail.mile)))selectMile(Number(e.detail.mile),false);});
+        if(svg&&profile.available)svg.addEventListener('pointermove',function(e){var r=svg.getBoundingClientRect(),vb=svg.viewBox.baseVal,x=(e.clientX-r.left)/r.width*vb.width,f=(x-profile.plot.x)/profile.plot.w;selectMile(Math.max(0,Math.min(1,f))*profile.total_mi);});
+        map.on('mousemove',function(e){var p=map.project(e.lngLat),best=0,bd=Infinity;points.forEach(function(pt,i){var q=map.project([pt[1],pt[0]]),d=(q.x-p.x)**2+(q.y-p.y)**2;if(d<bd){bd=d;best=i;}});selectMile((cumulative[best]/totalM)*((profile&&profile.total_mi)||totalM/1609.344));});
+        selectMile(0); return true;
+    }
+
     function init() {
         var root = document.getElementById(rootId);
         var pane = document.getElementById(rootId + '-map');
-        if (!root || !pane || typeof L === 'undefined' || points.length < 2) return;
+        if (!root || !pane || points.length < 2) return;
+        if (initMapbox(root, pane)) return;
+        if (typeof L === 'undefined') return;
 
         var map = L.map(pane, { scrollWheelZoom:false });
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

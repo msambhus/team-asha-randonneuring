@@ -299,7 +299,7 @@ def get_ride_participants(ride_id):
 def get_rider_participation(rider_id, season_id):
     return _execute("""
         SELECT rr.status, rr.finish_time, ri.id as ride_id, ri.name as ride_name,
-               ri.date, ri.distance_km, ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url,
+               ri.date, ri.distance_km, ri.ride_type, ri.elevation_ft, ri.ft_per_mile, ri.rwgps_url,
                ri.ride_plan_id, c.code as club_code, rp.slug as plan_slug
         FROM rider_ride rr
         JOIN ride ri ON rr.ride_id = ri.id
@@ -2246,7 +2246,9 @@ def update_strava_last_sync(rider_id):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "UPDATE strava_connection SET last_sync_at = CURRENT_TIMESTAMP WHERE rider_id = %s",
+        """UPDATE strava_connection
+           SET last_sync_at = CURRENT_TIMESTAMP, backfill_error = NULL
+           WHERE rider_id = %s""",
         (rider_id,)
     )
     conn.commit()
@@ -3465,7 +3467,8 @@ def get_strava_admin_summary():
     return _execute("""
         SELECT r.id AS rider_id, r.first_name, r.last_name, r.rusa_id,
                sc.eddington_number_miles, sc.eddington_number_km,
-               sc.eddington_calculated_at, sc.backfill_cursor, sc.last_sync_at,
+               sc.eddington_calculated_at, sc.backfill_cursor, sc.backfill_error,
+               sc.last_sync_at,
                COUNT(sa.id) AS activity_count,
                MIN(sa.start_date)::date AS oldest_activity,
                MAX(sa.start_date)::date AS newest_activity
@@ -3474,7 +3477,8 @@ def get_strava_admin_summary():
         LEFT JOIN strava_activity sa ON sa.rider_id = sc.rider_id
         GROUP BY r.id, r.first_name, r.last_name, r.rusa_id,
                  sc.eddington_number_miles, sc.eddington_number_km,
-                 sc.eddington_calculated_at, sc.backfill_cursor, sc.last_sync_at
+                 sc.eddington_calculated_at, sc.backfill_cursor, sc.backfill_error,
+                 sc.last_sync_at
         ORDER BY r.first_name, r.last_name
     """).fetchall()
 
@@ -3506,6 +3510,26 @@ def get_backfill_cursor(rider_id):
         SELECT backfill_cursor FROM strava_connection WHERE rider_id = %s
     """, (rider_id,)).fetchone()
     return row['backfill_cursor'] if row else None
+
+
+def get_backfill_error(rider_id):
+    """Return the last automatic backfill error for a rider, if any."""
+    row = _execute(
+        "SELECT backfill_error FROM strava_connection WHERE rider_id = %s",
+        (rider_id,),
+    ).fetchone()
+    return row['backfill_error'] if row else None
+
+
+def update_backfill_error(rider_id, error):
+    """Persist a bounded automatic backfill error for admin visibility."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE strava_connection SET backfill_error = %s WHERE rider_id = %s",
+        (str(error or '')[:500], rider_id),
+    )
+    conn.commit()
 
 
 def update_backfill_cursor(rider_id, cursor_date):

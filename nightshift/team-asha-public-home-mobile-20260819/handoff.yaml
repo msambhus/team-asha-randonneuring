@@ -1,0 +1,28 @@
+mission:
+  ask: "nightshoft workflow to update 2 things .. home page on the web for non logged in users should be more generic rather than highlighting total rides and photos etc. should be an attractive page to showcase what is team asha. what is team ashs randonneuring. and maybe add a few randonneuring photos from team asha. logged in page can stay the same. mobile app landing page also should change to a page with summary like ont he web for logged in users. for not logged in users, keep same philosophy as web. in the mobile app, when i click on a individual rider it says cant load the rider. fix all these"
+  done_state: stable-production
+  done_when:
+    - Anonymous web visitors see a Team Asha-focused story page without aggregate rider/ride statistics; authenticated web visitors retain the existing stats dashboard.
+    - The web public page and mobile anonymous landing page explain Team Asha, randonneuring, the education mission, and show available Team Asha imagery with usable sign-in/navigation calls to action.
+    - Authenticated mobile users retain an app dashboard with a concise Team Asha/randonneuring summary and their existing ride navigation; unauthenticated users can see the public landing page before signing in.
+    - Tapping a rider in the mobile directory loads the public rider profile reliably, with a regression test covering the client/API contract and no private training data exposed.
+    - The change is verified, tracked in a GitHub issue, merged through a feature branch and pull request, and no direct push to main occurs.
+  halts: []
+outcome: advance
+then: build
+outputs:
+  - nightshift/team-asha-public-home-mobile-20260819/mission.json
+  - nightshift/team-asha-public-home-mobile-20260819/investigation.md
+  - nightshift/team-asha-public-home-mobile-20260819/blueprint.md
+  - nightshift/team-asha-public-home-mobile-20260819/plan.md
+  - nightshift/team-asha-public-home-mobile-20260819/redteam-review.json
+  - nightshift/team-asha-public-home-mobile-20260819/handoff.yaml
+note: "Frame is complete: implement the anonymous Team Asha story surfaces, preserve authenticated web stats and mobile ride access, and fix/test the mobile public rider detail contract. Top risk is the under-specified rider failure, which must be reproduced and verified rather than guessed."
+blockers: []
+review:
+  decision: PASS
+  proof_ceiling: STATIC_ONLY
+rollout:
+  target_environment: production
+  deploy_path: "PR merge into main; deployment provider evidence to be confirmed during land"
+  verify_shape: "Flask/template tests, mobile Jest/TypeScript/export checks, and browser/mobile flow checks"

@@ -164,6 +164,10 @@ def sync_rider_activities(rider_id, days=365, before_epoch=None, after_epoch=Non
     if calculate_eddington:
         try:
             from services.eddington import calculate_eddington_number
+            # The activity query is memoized. Invalidate its rider-specific
+            # entry after upserts so a manual sync calculates from fresh rows.
+            from cache import cache
+            cache.delete_memoized(get_all_strava_activities_for_eddington, rider_id)
             all_activities = get_all_strava_activities_for_eddington(rider_id)
 
             eddington_miles = calculate_eddington_number(all_activities, unit='miles')

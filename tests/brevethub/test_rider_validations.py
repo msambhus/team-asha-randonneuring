@@ -46,9 +46,11 @@ def test_rider_submission_is_marked_as_rider_owned(monkeypatch):
     saved = {}
     monkeypatch.setattr('brevethub.models.create_validation_submission', lambda **kwargs: saved.update(kwargs) or {'id': 77})
     monkeypatch.setattr('brevethub.models.add_validation_evidence', lambda *a, **k: {'id': 1})
-    monkeypatch.setattr('brevethub.models.replace_validation_checks', lambda *a, **k: None)
+    monkeypatch.setattr('brevethub.models.replace_validation_checks',
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError('analysis must be deferred')))
     response = client.post('/my/validations/12/new', data={'proof_description': 'Signed brevet card'})
     assert response.status_code == 302
     assert response.headers['Location'].endswith('/my/validations')
     assert saved['rider_id'] == 1
     assert saved['submitted_by'] == 'rider'
+    assert saved['source_metadata']['validation_pending'] is True

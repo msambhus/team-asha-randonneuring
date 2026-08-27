@@ -10,7 +10,8 @@
 
 <div style="margin-bottom:20px;display:flex;gap:10px;align-items:center;">
 <a href="{{ url_for('admin.dashboard') }}" class="btn" style="background:#e2e8f0;color:var(--text);">Back to Dashboard</a>
-<a href="{{ url_for('admin.recalculate_eddington') }}" class="btn" style="background:var(--primary);color:#fff;" onclick="this.textContent='Recalculating...';this.style.opacity='0.6';">Recalculate All Eddington</a>
+<button type="button" class="btn" style="background:var(--primary);color:#fff;" onclick="recalculateAllEddington(this)">Recalculate All Eddington</button>
+<span id="eddington-status" style="font-size:0.85rem;color:var(--text-light);"></span>
 </div>
 
 <div class="table-wrap">
@@ -25,23 +26,27 @@
 <th>Newest Activity</th>
 <th>Backfill Cursor</th>
 <th>Last Sync</th>
+<th>Actions</th>
 </tr>
 </thead>
 <tbody>
 {% for r in riders %}
-<tr>
+<tr data-rider-id="{{ r.rider_id }}">
 <td>
 <a href="{{ url_for('riders.rider_profile', rusa_id=r.rusa_id) }}" style="color:var(--primary);text-decoration:none;font-weight:600;">
 {{ r.first_name }} {{ r.last_name }}
 </a>
 </td>
 <td style="text-align:right;">{{ r.activity_count or 0 }}</td>
-<td style="text-align:right;font-weight:600;">{{ r.eddington_number_miles or 0 }}</td>
-<td style="text-align:right;">{{ r.eddington_number_km or 0 }}</td>
+<td class="eddington-miles" style="text-align:right;font-weight:600;">{{ r.eddington_number_miles or 0 }}</td>
+<td class="eddington-km" style="text-align:right;">{{ r.eddington_number_km or 0 }}</td>
 <td>{{ r.oldest_activity or '—' }}</td>
 <td>{{ r.newest_activity or '—' }}</td>
-<td>
-{% if r.backfill_cursor %}
+<td class="backfill-status">
+{% if r.backfill_error %}
+<span style="color:#c2410c;font-weight:600;" title="{{ r.backfill_error }}">Blocked</span>
+<div style="max-width:220px;font-size:0.7rem;color:#9a3412;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.backfill_error }}">{{ r.backfill_error }}</div>
+{% elif r.backfill_cursor %}
 {{ r.backfill_cursor }}
 {% if r.backfill_cursor.year <= 2008 %}
 <span style="color:#38a169;font-size:0.8rem;">Done</span>
@@ -57,6 +62,14 @@
 —
 {% endif %}
 </td>
+<td>
+<button type="button" class="btn strava-sync-btn" style="padding:5px 9px;font-size:0.75rem;background:#fc4c02;color:#fff;" onclick="syncRiderStrava(this, {{ r.rider_id }})">
+Fetch Strava
+</button>
+<button type="button" class="btn strava-backfill-btn" style="padding:5px 9px;font-size:0.75rem;background:#7c3aed;color:#fff;margin-top:4px;" onclick="backfillRiderStrava(this, {{ r.rider_id }})">
+Backfill 90d
+</button>
+</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -64,4 +77,85 @@
 </div>
 
 </div>
+<script>
+function setButtonBusy(button, busy, label) {
+    button.disabled = busy;
+    button.textContent = label;
+    button.style.opacity = busy ? '0.6' : '1';
+}
+
+function updateEddingtonRow(rider) {
+    var row = document.querySelector('tr[data-rider-id="' + rider.rider_id + '"]');
+    if (!row) return;
+    row.querySelector('.eddington-miles').textContent = rider.eddington_miles || 0;
+    row.querySelector('.eddington-km').textContent = rider.eddington_km || 0;
+}
+
+async function recalculateAllEddington(button) {
+    var status = document.getElementById('eddington-status');
+    setButtonBusy(button, true, 'Recalculating...');
+    status.textContent = '';
+    try {
+        var response = await fetch('{{ url_for("admin.recalculate_eddington") }}');
+        var data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Recalculation failed');
+        (data.riders || []).forEach(updateEddingtonRow);
+        status.style.color = '#16a34a';
+        status.textContent = 'Updated ' + (data.recalculated || 0) + ' riders.';
+    } catch (error) {
+        status.style.color = '#dc2626';
+        status.textContent = error.message;
+    } finally {
+        setButtonBusy(button, false, 'Recalculate All Eddington');
+    }
+}
+
+async function syncRiderStrava(button, riderId) {
+    var status = document.getElementById('eddington-status');
+    setButtonBusy(button, true, 'Fetching...');
+    status.textContent = '';
+    try {
+        var response = await fetch('{{ url_for("admin.sync_strava_for_rider", rider_id=0) }}'.replace('/0', '/' + riderId), {method: 'POST'});
+        var data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Strava sync failed');
+        updateEddingtonRow(data);
+        status.style.color = '#16a34a';
+        status.textContent = 'Fetched ' + data.total + ' activities; Eddington updated.';
+    } catch (error) {
+        status.style.color = '#dc2626';
+        status.textContent = error.message;
+    } finally {
+        setButtonBusy(button, false, 'Fetch Strava');
+    }
+}
+
+async function backfillRiderStrava(button, riderId) {
+    var status = document.getElementById('eddington-status');
+    var row = document.querySelector('tr[data-rider-id="' + riderId + '"]');
+    var cursorCell = row && row.querySelector('.backfill-status');
+    setButtonBusy(button, true, 'Backfilling...');
+    status.textContent = '';
+    try {
+        var response = await fetch('{{ url_for("admin.backfill_strava_for_rider", rider_id=0) }}'.replace('/0', '/' + riderId), {method: 'POST'});
+        var data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Backfill failed');
+        if (cursorCell) {
+            cursorCell.textContent = data.cursor_moved_to || data.status || 'Complete';
+            cursorCell.style.color = '#16a34a';
+            cursorCell.style.fontWeight = '600';
+        }
+        status.style.color = '#16a34a';
+        status.textContent = 'Backfilled ' + (data.days_back || 90) + ' days for rider ' + riderId + '.';
+    } catch (error) {
+        if (cursorCell) {
+            cursorCell.textContent = 'Error: ' + error.message;
+            cursorCell.style.color = '#dc2626';
+        }
+        status.style.color = '#dc2626';
+        status.textContent = error.message;
+    } finally {
+        setButtonBusy(button, false, 'Backfill 90d');
+    }
+}
+</script>
 {% endblock %}

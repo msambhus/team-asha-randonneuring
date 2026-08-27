@@ -170,7 +170,15 @@
     mapboxgl.accessToken = MAPBOX_TOKEN;
     map = new mapboxgl.Map({
       container: 'radial-map',
-      style: 'mapbox://styles/mapbox/outdoors-v12',
+      style: 'mapbox://styles/mapbox/standard',
+      config: { basemap: {
+        lightPreset: 'day',
+        theme: 'default',
+        show3dObjects: false,
+        showPointOfInterestLabels: true,
+        showRoadLabels: true,
+        showPlaceLabels: true
+      } },
       center: [-122.2, 37.5], zoom: 8,
     });
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
