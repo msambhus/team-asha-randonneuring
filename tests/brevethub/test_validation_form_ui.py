@@ -33,3 +33,6 @@ def test_validation_navigation_has_loading_feedback():
         assert "validation-submit-link" in (TEMPLATES / name).read_text()
     assert "Loading evidence" in base
     assert "aria-busy" in base
+    assert "aria-disabled" in base
+    assert "pointer-events:none" in base
+    assert "async-navigation-link" in (TEMPLATES / "admin" / "validations.html").read_text()

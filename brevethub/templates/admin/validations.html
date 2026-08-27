@@ -15,7 +15,7 @@
       <td class="p-3"><strong class="block">{{ row.rider_name }}</strong><span class="text-sm text-text-light">{{ row.event_name|clean_name }} · {{ row.date }} · {{ row.distance_km }} km</span></td>
       <td class="p-3">{{ row.source_type|replace('_', ' ')|title }}</td>
       <td class="p-3">{% if row.organizer_decision == 'approved' %}<span class="validation-badge validation-approved">Approved</span>{% elif row.organizer_decision %}<span class="validation-badge validation-{{ row.organizer_decision }}">{{ row.organizer_decision|replace('_', ' ')|title }}</span>{% else %}<span class="validation-badge validation-pending">Organizer pending</span>{% endif %}</td>
-      <td class="p-3 text-right"><a class="btn btn-secondary" href="{{ url_for('admin.validation_detail', submission_id=row.id) }}">Review</a></td>
+      <td class="p-3 text-right"><a class="btn btn-secondary async-navigation-link" data-loading-label="Loading review…" href="{{ url_for('admin.validation_detail', submission_id=row.id) }}">Review</a></td>
     </tr>{% else %}<tr><td class="p-6 text-center text-text-light" colspan="4">No evidence submissions yet.</td></tr>{% endfor %}
     </tbody></table>
   </div>
