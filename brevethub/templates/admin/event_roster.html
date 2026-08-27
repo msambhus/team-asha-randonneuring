@@ -226,8 +226,7 @@
             <td>
               <span class="status-pill pill-{{ vdecision }}">{{ r.validation_label }}</span>
               {% if r.validation_id %}
-              <br><a href="{{ url_for('admin.validation_detail', submission_id=r.validation_id) }}"
-                     class="text-primary text-xs font-semibold">View proof →</a>
+              <br><a class="async-navigation-link text-primary text-xs font-semibold" data-loading-label="Loading review…" href="{{ url_for('admin.validation_detail', submission_id=r.validation_id) }}">View proof →</a>
               {% elif r.status == 'finished' %}
               <br><a href="{{ url_for('admin.validation_new', event_id=event.id, rider_id=r.rider_id) }}"
                      class="text-primary text-xs font-semibold">+ Submit proof</a>
