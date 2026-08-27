@@ -85,3 +85,8 @@ document.querySelectorAll('.validation-departure-button').forEach(button => {
 .validation-performance-table th:nth-child(2),.validation-performance-table td:nth-child(2){width:18%;max-width:18%}
 </style>
 {% endblock %}
+<style>
+/* Speed and headwind share the left mph scale; keep the right elevation axis visible. */
+.validation-chart-shell svg>#validation-chart-right-labels{display:block!important}
+.validation-chart-shell svg>text[transform*="rotate(90"]{display:block!important}
+</style>
