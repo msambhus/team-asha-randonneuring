@@ -12,6 +12,9 @@ def test_validation_form_styles_make_fields_distinct():
     assert ".evidence-section .form-input:focus" in source
     assert "Choose one or more evidence sources below" in source
     assert source.count("evidence-choice-number") >= 3
+    assert "control-proof-grid" in source
+    assert "proof-image-modal" in source
+    assert "URL.createObjectURL(file)" in source
 
 
 def test_manual_proof_is_rendered_only_for_controls():
