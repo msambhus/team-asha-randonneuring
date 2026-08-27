@@ -1761,7 +1761,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                             <div class="event-actions-dropdown" hidden role="menu">
                               {% if reg and reg.registration_status %}
                                 {% if show_proof %}
-                                <a class="event-actions-item" role="menuitem" href="{{ url_for('validation.submit_validation', event_id=ev.id) }}">Submit proof</a>
+                                <a class="event-actions-item validation-submit-link" role="menuitem" href="{{ url_for('validation.submit_validation', event_id=ev.id) }}">Submit proof</a>
                                 {% endif %}
                                 {% if post_ride and status in ('registered', 'finished', 'dnf', 'dns', 'otl') %}
                                 <div class="event-actions-label" role="presentation">Record result</div>
@@ -1850,7 +1850,7 @@ button.volunteer-chip.is-active:hover { background: #fde68a; }
                       data-event-id="{{ s.event_id }}">
                   {{ s.finish_time or '—' }}
                 </span>
-                {% if s.organizer_decision != 'approved' and (s.evidence_submission_allowed or (not s.submission_id and not s.finish_time)) %}<a class="event-link-btn" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit proof</a>{% endif %}
+                {% if s.organizer_decision != 'approved' and (s.evidence_submission_allowed or (not s.submission_id and not s.finish_time)) %}<a class="event-link-btn validation-submit-link" href="{{ url_for('validation.submit_validation', event_id=s.event_id) }}">Submit proof</a>{% endif %}
               </span>
             </div>
           </article>
