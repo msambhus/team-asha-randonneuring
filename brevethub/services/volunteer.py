@@ -5,6 +5,7 @@ from datetime import date
 
 from brevethub import models
 from brevethub.services.registration import rider_display_name
+from brevethub.services.worker_ride import ride_mode_context
 
 
 def volunteer_open(event, *, slot_count=None):
@@ -36,6 +37,7 @@ def slot_payload(slot, *, confirmed_count=None):
         'confirmed_count': confirmed_count,
         'available': available,
         'full': available <= 0,
+        'allows_ride_on_event_day': bool(slot.get('allows_ride_on_event_day')),
     }
 
 
@@ -91,6 +93,7 @@ def signup_for_slot(rider, slot_id):
             if status == 'exception'
             else 'You are signed up to volunteer.'
         ),
+        'ride_mode': ride_mode_context(rider['id'], event['id'], event),
     }
 
 

@@ -16,6 +16,8 @@
   var profileData = null;
   var waiverAccepted = false;
   var profileEditing = false;
+  var selectedRideMode = null;
+  var rideModeAcknowledged = false;
 
   var waiverData = {
     method: 'in_app',            // 'in_app' | 'smartwaiver'
@@ -109,9 +111,53 @@
     return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
 
-  function fmtMoney(cents) {
-    if (cents == null) return '—';
-    return '$' + (cents / 100).toFixed(0);
+  function fmtWeekRange(startIso, endIso) {
+    if (!startIso || !endIso) return '';
+    return fmtDate(startIso) + ' – ' + fmtDate(endIso);
+  }
+
+  function renderRideModeSection() {
+    var rm = profileData.ride_mode;
+    if (!rm || !rm.worker_ride_enabled || !rm.is_volunteer) return '';
+    var suggested = rm.suggested_ride_mode || 'worker_ride';
+    var current = selectedRideMode || rm.ride_mode || suggested;
+    var week = fmtWeekRange(rm.event_week_start, rm.event_week_end);
+    return ''
+      + '<div class="reg-ride-mode card" style="margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:10px;">'
+      + '<p class="reg-section-title" style="margin-top:0;">Your ride plan</p>'
+      + '<p class="text-sm text-text-light">You are volunteering for this event. Choose whether you will ride on event day or complete a worker ride during the event week (' + esc(week) + ').</p>'
+      + '<div class="vol-slot-list" style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:12px 0;">'
+      + '<label class="vol-slot-option" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;">'
+      + '<input type="radio" name="ride_mode" value="event_day"' + (current === 'event_day' ? ' checked' : '') + ' style="margin-top:4px;">'
+      + '<span><strong>Event day</strong><br><span class="text-xs text-text-light">Ride the brevet on the scheduled date.</span></span></label>'
+      + '<label class="vol-slot-option" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;cursor:pointer;">'
+      + '<input type="radio" name="ride_mode" value="worker_ride"' + (current === 'worker_ride' ? ' checked' : '') + ' style="margin-top:4px;">'
+      + '<span><strong>Worker ride</strong><br><span class="text-xs text-text-light">Same route, any day ' + esc(week) + '.</span></span></label>'
+      + '</div>'
+      + '<label class="flex items-start gap-2 text-sm"><input type="checkbox" name="ride_mode_ack"' + (rideModeAcknowledged ? ' checked' : '') + '>'
+      + ' I understand this choice and will follow organizer guidance for my selected plan.</label>'
+      + '</div>';
+  }
+
+  function readRideModeFromForm() {
+    var picked = els.body.querySelector('input[name="ride_mode"]:checked');
+    selectedRideMode = picked ? picked.value : null;
+    var ack = els.body.querySelector('input[name="ride_mode_ack"]');
+    rideModeAcknowledged = !!(ack && ack.checked);
+  }
+
+  function bindRideModeSection() {
+    els.body.querySelectorAll('input[name="ride_mode"], input[name="ride_mode_ack"]').forEach(function (el) {
+      el.addEventListener('change', readRideModeFromForm);
+    });
+  }
+
+  function rideModeReady() {
+    var rm = profileData && profileData.ride_mode;
+    if (!rm || !rm.worker_ride_enabled || !rm.is_volunteer) return true;
+    if (rm.ride_mode && rm.ride_mode_ack_at && !rm.needs_ride_mode_choice) return true;
+    readRideModeFromForm();
+    return !!(selectedRideMode && rideModeAcknowledged);
   }
 
   var RUSA_RENEW_URL = 'https://rusa.org/pages/join-renew-membership';
@@ -199,6 +245,8 @@
     profileData = null;
     waiverAccepted = false;
     profileEditing = false;
+    selectedRideMode = null;
+    rideModeAcknowledged = false;
     step = 1;
     resetWaiverData();
     teamData = { team_name: '', proof_method: 'brevet_card', rwgps_url: '', draft_route_accepted: false, notes: '',
@@ -721,13 +769,18 @@
   }
 
   function rerenderStep2() {
-    els.body.innerHTML = renderProfileSection() +
+    els.body.innerHTML = renderProfileSection() + renderRideModeSection() +
       '<div class="reg-actions"><button type="button" class="reg-secondary-btn" data-reg-back>← Back</button>' +
       '<button type="button" class="reg-primary-btn" data-reg-next disabled>Proceed to Confirm →</button></div>';
     els.body.querySelector('[data-reg-back]').addEventListener('click', function () {
       mode === 'bulk' ? renderBulkStep1() : renderStep1();
     });
+    bindRideModeSection();
     els.body.querySelector('[data-reg-next]').addEventListener('click', function () {
+      if (!rideModeReady()) {
+        alert('Choose event day or worker ride and confirm your plan.');
+        return;
+      }
       if (!signatoryNameMatches()) {
         var sigInput = els.body.querySelector('input[name="signatory_name"]');
         if (sigInput) {
@@ -862,9 +915,15 @@
         '<button type="button" class="reg-primary-btn reg-confirm-btn" data-reg-confirm>Confirm all</button></div>';
     } else {
       var ev = eventData.event;
+      var rm = profileData.ride_mode;
+      var ridePlan = '';
+      if (rm && rm.worker_ride_enabled && rm.is_volunteer && selectedRideMode) {
+        ridePlan = '<p>Ride plan: <strong>' + (selectedRideMode === 'worker_ride' ? 'Worker ride' : 'Event day') + '</strong></p>';
+      }
       els.body.innerHTML =
         '<div class="reg-summary card"><p class="reg-section-title">Ready to confirm</p>' +
         '<p>Register for <strong>' + ev.name + '</strong> on <strong>' + fmtDate(ev.date) + '</strong>.</p>' +
+        ridePlan +
         (ev.fee_cents != null ? '<p>Entry fee: <strong>' + fmtMoney(ev.fee_cents) + '</strong> (no charge today).</p>' : '') +
         '</div>' +
         '<div class="reg-actions"><button type="button" class="reg-secondary-btn" data-reg-back>← Back</button>' +
@@ -892,6 +951,10 @@
       waiver_signed_date: waiverData.waiver_date || null,
     };
     if (mode === 'bulk') body.event_ids = eventIds;
+    if (selectedRideMode) {
+      body.ride_mode = selectedRideMode;
+      body.ride_mode_acknowledged = rideModeAcknowledged;
+    }
 
     fetch(url, {
       method: 'POST',
@@ -922,7 +985,9 @@
       '<div class="reg-success"><div class="reg-success-icon">✓</div><h3>You\'re on the roster!</h3></div>' +
       '<div class="reg-brevet-card"><div class="reg-card-title">' + ev.name + '</div>' +
       '<div class="reg-card-meta">' + fmtDate(ev.date) + ' · ' + ev.distance_km + 'km</div>' +
-      '<div class="reg-card-grid"><div><span>Confirmation</span><strong>' + data.confirmation_code + '</strong></div></div></div>' +
+      '<div class="reg-card-grid"><div><span>Confirmation</span><strong>' + data.confirmation_code + '</strong></div>'
+      + (data.ride_mode_label ? '<div><span>Ride plan</span><strong>' + esc(data.ride_mode_label) + '</strong></div>' : '')
+      + '</div></div>' +
       '<button type="button" class="reg-primary-btn" data-reg-done>Done</button>';
     els.body.querySelector('[data-reg-done]').addEventListener('click', closeModal);
     document.dispatchEvent(new CustomEvent('brevethub:registered', {

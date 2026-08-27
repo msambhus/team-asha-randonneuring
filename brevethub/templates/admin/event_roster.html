@@ -178,6 +178,7 @@
             <th class="sortable" data-sort-key="name" data-sort-type="text">Rider <span class="sort-indicator"></span></th>
             <th class="sortable" data-sort-key="contact" data-sort-type="text">Contact <span class="sort-indicator"></span></th>
             <th class="sortable" data-sort-key="progress" data-sort-type="text">Progress <span class="sort-indicator"></span></th>
+            <th class="sortable" data-sort-key="ride_mode" data-sort-type="text">Ride plan <span class="sort-indicator"></span></th>
             <th class="sortable" data-sort-key="status" data-sort-type="text">Status <span class="sort-indicator"></span></th>
             <th class="sortable" data-sort-key="finish" data-sort-type="text">Finish <span class="sort-indicator"></span></th>
             <th class="sortable" data-sort-key="validation" data-sort-type="text">Validation <span class="sort-indicator"></span></th>
@@ -191,6 +192,7 @@
               data-sort-name="{{ r.display_name|lower }}"
               data-sort-contact="{{ (r.email or r.phone or '')|lower }}"
               data-sort-progress="{{ r.progress|lower }}"
+              data-sort-ride_mode="{{ (r.ride_mode_label or '')|lower }}"
               data-sort-status="{{ (r.status or '')|lower }}"
               data-sort-finish="{{ (r.finish_time or '')|lower }}"
               data-sort-validation="{{ r.validation_label|lower }}">
@@ -207,6 +209,13 @@
               <strong>{{ r.progress }}</strong>
               {% if r.live_ride_id and r.event_today %}
               <br><a href="{{ url_for('live.live_map', ride_id=r.live_ride_id) }}" class="text-primary text-xs font-semibold">Live →</a>
+              {% endif %}
+            </td>
+            <td>
+              {% if event.worker_ride_enabled %}
+              <span class="text-sm">{{ r.ride_mode_label }}</span>
+              {% else %}
+              <span class="text-text-light text-xs">—</span>
               {% endif %}
             </td>
             <td>

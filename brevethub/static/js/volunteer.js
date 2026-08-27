@@ -132,9 +132,41 @@
 
     html += '<div style="margin-top:16px;"><button type="button" class="signup-btn secondary" data-vol-close>Close</button></div>';
     body.innerHTML = html;
+
+    fetch('/calendar/' + eventId + '/ride-mode', { credentials: 'same-origin' })
+      .then(function (r) {
+        if (r.status === 401) return null;
+        return r.json();
+      })
+      .then(function (data) {
+        if (data && data.ride_mode && data.ride_mode.worker_ride_enabled) {
+          var changeBtn = document.createElement('button');
+          changeBtn.type = 'button';
+          changeBtn.className = 'signup-btn register-primary';
+          changeBtn.style.marginTop = '12px';
+          changeBtn.textContent = data.ride_mode.needs_ride_mode_choice
+            ? 'Choose ride plan'
+            : 'Change ride plan (' + (data.ride_mode.ride_mode === 'worker_ride' ? 'Worker ride' : 'Event day') + ')';
+          changeBtn.addEventListener('click', function () {
+            renderRideModeChoice(data.ride_mode);
+          });
+          var footer = body.querySelector('[data-vol-close]');
+          if (footer && footer.parentNode) {
+            footer.parentNode.insertBefore(changeBtn, footer);
+          } else {
+            body.appendChild(changeBtn);
+          }
+        }
+      })
+      .catch(function () { /* noop */ });
   }
 
   function renderConfirmation(result) {
+    updateVolunteerStrip(eventId, result);
+    if (result.ride_mode && result.ride_mode.worker_ride_enabled && result.ride_mode.needs_ride_mode_choice) {
+      renderRideModeChoice(result.ride_mode, function () { closeModal(); });
+      return;
+    }
     body.innerHTML = ''
       + '<div style="text-align:center;padding:20px 0;">'
       + '<div style="font-size:2.5rem;margin-bottom:8px;">' + (result.needs_approval ? '⏳' : '✓') + '</div>'
@@ -142,7 +174,72 @@
       + '<p class="text-text-light text-sm">' + esc(result.rider_name) + ' · ' + esc(result.slot.role_name) + '</p>'
       + '<button type="button" class="signup-btn register-primary" style="margin-top:20px;" data-vol-done>Done</button>'
       + '</div>';
-    updateVolunteerStrip(eventId, result);
+  }
+
+  function fmtWeekRange(startIso, endIso) {
+    if (!startIso || !endIso) return '';
+    var fmt = function (iso) {
+      var d = new Date(iso + 'T12:00:00');
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    };
+    return fmt(startIso) + ' – ' + fmt(endIso);
+  }
+
+  function renderRideModeChoice(ctx, onDone) {
+    var suggested = ctx.suggested_ride_mode || 'worker_ride';
+    var current = ctx.ride_mode || suggested;
+    var week = fmtWeekRange(ctx.event_week_start, ctx.event_week_end);
+    body.innerHTML = ''
+      + '<div class="reg-event-banner" style="margin-bottom:16px;">'
+      + '<div><div class="reg-event-type">Ride plan</div>'
+      + '<div class="reg-event-name">Choose how you will ride</div>'
+      + '<div class="reg-event-meta">Worker ride week: ' + esc(week) + '</div></div></div>'
+      + '<p class="text-sm text-text-light mb-3">You signed up to volunteer. Choose event day or a worker ride during the event week.</p>'
+      + '<div class="vol-slot-list" style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;">'
+      + '<label class="vol-slot-option" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;">'
+      + '<input type="radio" name="ride_mode" value="event_day"' + (current === 'event_day' ? ' checked' : '') + ' style="margin-top:4px;">'
+      + '<span><strong>Event day</strong><br><span class="text-xs text-text-light">Ride on the scheduled brevet date.</span></span></label>'
+      + '<label class="vol-slot-option" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;cursor:pointer;">'
+      + '<input type="radio" name="ride_mode" value="worker_ride"' + (current === 'worker_ride' ? ' checked' : '') + ' style="margin-top:4px;">'
+      + '<span><strong>Worker ride</strong><br><span class="text-xs text-text-light">Same route, any day ' + esc(week) + '.</span></span></label>'
+      + '</div>'
+      + '<label class="flex items-start gap-2 text-sm mb-3"><input type="checkbox" name="ride_mode_ack">'
+      + ' I understand this choice and will follow organizer guidance.</label>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+      + '<button type="button" class="signup-btn secondary" data-vol-close>Later</button>'
+      + '<button type="button" class="signup-btn register-primary" data-ride-mode-save>Save ride plan</button>'
+      + '</div>';
+
+    body.querySelector('[data-ride-mode-save]').addEventListener('click', function () {
+      var picked = body.querySelector('input[name="ride_mode"]:checked');
+      var ack = body.querySelector('input[name="ride_mode_ack"]');
+      if (!picked) { alert('Choose event day or worker ride.'); return; }
+      if (!ack || !ack.checked) { alert('Please confirm your ride plan.'); return; }
+      var btn = body.querySelector('[data-ride-mode-save]');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      fetch('/calendar/' + eventId + '/ride-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ride_mode: picked.value, acknowledged: true }),
+      }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            alert(res.data.error || 'Could not save ride plan.');
+            btn.disabled = false;
+            btn.textContent = 'Save ride plan';
+            return;
+          }
+          body.innerHTML = ''
+            + '<div style="text-align:center;padding:20px 0;">'
+            + '<div style="font-size:2.5rem;margin-bottom:8px;">✓</div>'
+            + '<h3 style="color:var(--primary);margin:0 0 8px;">Ride plan saved</h3>'
+            + '<p class="text-text-light text-sm">' + (picked.value === 'worker_ride' ? 'Worker ride' : 'Event day') + '</p>'
+            + '<button type="button" class="signup-btn register-primary" style="margin-top:20px;" data-vol-done>Done</button>'
+            + '</div>';
+          if (onDone) body.querySelector('[data-vol-done]').addEventListener('click', onDone);
+        });
+    });
   }
 
   function getEventCard(eid) {

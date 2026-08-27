@@ -1124,6 +1124,7 @@ def get_upcoming_events(state=None, limit=200):
         "       e.start_time, e.time_limit_hours, "
         "       e.fee_cents, e.registration_deadline, e.capacity, "
         "       e.event_summary, e.registration_enabled, e.volunteer_enabled, "
+        "       e.worker_ride_enabled, "
         "       (SELECT p.rwgps_url FROM rp_brevet_route_plan p "
         "        WHERE p.event_id = e.id AND p.rwgps_url IS NOT NULL "
         "        ORDER BY CASE p.variant WHEN 'conservative' THEN 0 ELSE 1 END, p.id "
@@ -2764,7 +2765,7 @@ def get_brevet_event_registration(event_id):
         "       e.ride_type, e.elevation_ft, e.rwgps_url, e.start_location, "
         "       e.start_time, e.time_limit_hours, e.club_id, "
         "       e.fee_cents, e.registration_deadline, e.capacity, e.event_summary, "
-        "       e.registration_enabled, e.volunteer_enabled, e.closed_at, "
+        "       e.registration_enabled, e.volunteer_enabled, e.worker_ride_enabled, e.closed_at, "
         "       c.name AS club_name, c.rusa_club_id "
         "FROM rp_brevet_event e LEFT JOIN rp_club c ON c.id = e.club_id "
         "WHERE e.id = %s",
@@ -2784,7 +2785,7 @@ def get_event_registration_count(event_id):
 def get_event_signup_registration(rider_id, event_id):
     return db.query_one(
         "SELECT id, status, registration_status, registration_confirmed_at, "
-        "       exception_reason, confirmation_code "
+        "       exception_reason, confirmation_code, ride_mode, ride_mode_ack_at "
         "FROM rp_event_signup WHERE rider_id = %s AND event_id = %s",
         (rider_id, event_id),
     )
@@ -2793,7 +2794,7 @@ def get_event_signup_registration(rider_id, event_id):
 def get_rider_signup_registrations(rider_id):
     return db.query(
         "SELECT event_id, status, registration_status, registration_confirmed_at, "
-        "       exception_reason, confirmation_code "
+        "       exception_reason, confirmation_code, ride_mode, ride_mode_ack_at "
         "FROM rp_event_signup WHERE rider_id = %s",
         (rider_id,),
     )
@@ -2832,26 +2833,34 @@ def record_waiver_acceptance(event_id, rider_id, waiver_version_id, profile_snap
 
 
 def confirm_event_registration(rider_id, event_id, *, registration_status,
-                               exception_reason=None, confirmation_code=None):
+                               exception_reason=None, confirmation_code=None,
+                               ride_mode=None, ride_mode_acknowledged=False):
     """Mark a rider registered; registered status only when confirmed, else interested."""
     ride_status = (RideStatus.REGISTERED.value if registration_status == 'confirmed'
                    else RideStatus.INTERESTED.value)
+    ack_sql = 'NOW()' if (ride_mode_acknowledged and ride_mode) else 'NULL'
     return db.execute(
         "INSERT INTO rp_event_signup "
         "  (rider_id, event_id, status, registration_status, "
-        "   registration_confirmed_at, exception_reason, confirmation_code) "
-        "VALUES (%s, %s, %s, %s, NOW(), %s, %s) "
+        "   registration_confirmed_at, exception_reason, confirmation_code, "
+        "   ride_mode, ride_mode_ack_at) "
+        "VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, "
+        f"{ack_sql}) "
         "ON CONFLICT (event_id, rider_id) DO UPDATE "
         "SET status = EXCLUDED.status, "
         "    registration_status = EXCLUDED.registration_status, "
         "    registration_confirmed_at = NOW(), "
         "    exception_reason = EXCLUDED.exception_reason, "
         "    confirmation_code = EXCLUDED.confirmation_code, "
+        "    ride_mode = COALESCE(EXCLUDED.ride_mode, rp_event_signup.ride_mode), "
+        f"    ride_mode_ack_at = CASE WHEN EXCLUDED.ride_mode IS NOT NULL "
+        f"THEN {ack_sql} ELSE rp_event_signup.ride_mode_ack_at END, "
         "    updated_at = NOW() "
         "WHERE rp_event_signup.status NOT IN (%s, %s, %s, %s) "
-        "RETURNING id, status, registration_status, confirmation_code",
+        "RETURNING id, status, registration_status, confirmation_code, "
+        "          ride_mode, ride_mode_ack_at",
         (rider_id, event_id, ride_status, registration_status,
-         exception_reason, confirmation_code,
+         exception_reason, confirmation_code, ride_mode,
          RideStatus.FINISHED.value, RideStatus.DNF.value,
          RideStatus.DNS.value, RideStatus.OTL.value),
         returning=True,
@@ -2863,6 +2872,7 @@ def enrich_brevet_event_registration(event_id, **fields):
     allowed = (
         'start_time', 'start_location', 'fee_cents', 'registration_deadline',
         'capacity', 'event_summary', 'registration_enabled', 'volunteer_enabled',
+        'worker_ride_enabled',
         'club_id',
         'elevation_ft', 'rwgps_url', 'time_limit_hours',
     )
@@ -2920,7 +2930,7 @@ def list_registration_exceptions(limit=100, club_id=None, region_prefix=None):
 def list_event_registrations(event_id):
     return db.query(
         "SELECT s.id, s.status, s.registration_status, s.registration_confirmed_at, "
-        "       s.confirmation_code, s.exception_reason, "
+        "       s.confirmation_code, s.exception_reason, s.ride_mode, "
         "       r.first_name, r.last_name, r.email, r.rusa_id, r.phone "
         "FROM rp_event_signup s JOIN rp_rider r ON r.id = s.rider_id "
         "WHERE s.event_id = %s AND s.registration_status IS NOT NULL "
@@ -3166,6 +3176,7 @@ def get_admin_event_roster(event_id):
     return db.query(
         "SELECT s.id AS signup_id, s.rider_id, s.status, s.registration_status, "
         "       s.registration_confirmed_at, s.confirmation_code, s.exception_reason, "
+        "       s.ride_mode, s.ride_mode_ack_at, "
         "       s.finish_time, s.updated_at, s.created_at, "
         "       s.homologation_number, s.evidence_submission_allowed, "
         "       r.first_name, r.last_name, r.email, r.rusa_id, r.phone, r.city, "
@@ -3389,7 +3400,7 @@ def get_volunteer_slots_for_event(event_id):
     """Slots for an event with confirmed signup counts."""
     return db.query(
         "SELECT s.id, s.event_id, s.role_name, s.description, s.capacity, "
-        "       s.sort_order, s.created_at, "
+        "       s.sort_order, s.created_at, s.allows_ride_on_event_day, "
         "       COALESCE(v.confirmed_count, 0) AS confirmed_count "
         "FROM rp_volunteer_slot s "
         "LEFT JOIN ("
@@ -3405,30 +3416,34 @@ def get_volunteer_slots_for_event(event_id):
 
 def get_volunteer_slot(slot_id):
     return db.query_one(
-        "SELECT id, event_id, role_name, description, capacity, sort_order, created_at "
+        "SELECT id, event_id, role_name, description, capacity, sort_order, "
+        "       created_at, allows_ride_on_event_day "
         "FROM rp_volunteer_slot WHERE id = %s",
         (slot_id,),
     )
 
 
 def create_volunteer_slot(event_id, role_name, *, description=None, capacity=1,
-                          sort_order=0):
+                          sort_order=0, allows_ride_on_event_day=False):
     role_name = (role_name or '').strip()
     if description is not None:
         description = (description or '').strip() or None
     row = db.execute(
         "INSERT INTO rp_volunteer_slot "
-        "(event_id, role_name, description, capacity, sort_order) "
-        "VALUES (%s, %s, %s, %s, %s) "
-        "RETURNING id, event_id, role_name, description, capacity, sort_order",
-        (event_id, role_name, description, capacity, sort_order),
+        "(event_id, role_name, description, capacity, sort_order, allows_ride_on_event_day) "
+        "VALUES (%s, %s, %s, %s, %s, %s) "
+        "RETURNING id, event_id, role_name, description, capacity, sort_order, "
+        "          allows_ride_on_event_day",
+        (event_id, role_name, description, capacity, sort_order,
+         bool(allows_ride_on_event_day)),
         returning=True,
     )
     return row
 
 
 def update_volunteer_slot(slot_id, *, role_name=None, description=None,
-                          capacity=None, sort_order=None):
+                          capacity=None, sort_order=None,
+                          allows_ride_on_event_day=None):
     if role_name is not None:
         role_name = (role_name or '').strip()
     if description is not None:
@@ -3440,16 +3455,18 @@ def update_volunteer_slot(slot_id, *, role_name=None, description=None,
         ('description', description),
         ('capacity', capacity),
         ('sort_order', sort_order),
+        ('allows_ride_on_event_day', allows_ride_on_event_day),
     ):
         if value is not None:
             sets.append(f"{key} = %s")
-            params.append(value)
+            params.append(value if key != 'allows_ride_on_event_day' else bool(value))
     if not sets:
         return get_volunteer_slot(slot_id)
     params.append(slot_id)
     return db.execute(
         f"UPDATE rp_volunteer_slot SET {', '.join(sets)} WHERE id = %s "
-        "RETURNING id, event_id, role_name, description, capacity, sort_order",
+        "RETURNING id, event_id, role_name, description, capacity, sort_order, "
+        "          allows_ride_on_event_day",
         tuple(params),
         returning=True,
     )
@@ -3459,6 +3476,30 @@ def delete_volunteer_slot(slot_id):
     return db.execute(
         "DELETE FROM rp_volunteer_slot WHERE id = %s RETURNING id",
         (slot_id,),
+        returning=True,
+    )
+
+
+def set_event_signup_ride_mode(rider_id, event_id, *, ride_mode, acknowledged=False):
+    """Set ride mode on an existing or new signup row."""
+    ack_sql = 'NOW()' if acknowledged else 'NULL'
+    return db.execute(
+        "INSERT INTO rp_event_signup (rider_id, event_id, status, ride_mode, ride_mode_ack_at) "
+        f"VALUES (%s, %s, %s, %s, {ack_sql}) "
+        "ON CONFLICT (event_id, rider_id) DO UPDATE "
+        "SET ride_mode = EXCLUDED.ride_mode, "
+        f"    ride_mode_ack_at = {ack_sql}, "
+        "    updated_at = NOW() "
+        "RETURNING id, ride_mode, ride_mode_ack_at",
+        (rider_id, event_id, RideStatus.INTERESTED.value, ride_mode),
+        returning=True,
+    )
+
+
+def set_event_worker_ride_enabled(event_id, enabled):
+    return db.execute(
+        "UPDATE rp_brevet_event SET worker_ride_enabled = %s WHERE id = %s RETURNING id",
+        (bool(enabled), event_id),
         returning=True,
     )
 

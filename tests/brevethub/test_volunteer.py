@@ -54,6 +54,7 @@ def test_slot_payload_available_count():
     assert payload_full['full'] is True
 
 
+@patch('brevethub.services.volunteer.ride_mode_context', return_value={'worker_ride_enabled': False})
 @patch('brevethub.services.volunteer.models.upsert_volunteer_signup')
 @patch('brevethub.services.volunteer.models.get_rider_active_volunteer_signups')
 @patch('brevethub.services.volunteer.models.count_slot_confirmed_signups')
@@ -61,7 +62,7 @@ def test_slot_payload_available_count():
 @patch('brevethub.services.volunteer.models.get_brevet_event_registration')
 @patch('brevethub.services.volunteer.models.get_volunteer_slot')
 def test_signup_confirms_first_slot(
-    mock_slot, mock_event, mock_existing, mock_count, mock_active, mock_upsert,
+    mock_slot, mock_event, mock_existing, mock_count, mock_active, mock_upsert, _rm,
 ):
     mock_slot.return_value = _slot()
     mock_event.return_value = _event()
@@ -78,6 +79,7 @@ def test_signup_confirms_first_slot(
     assert mock_upsert.call_args.kwargs['status'] == 'confirmed'
 
 
+@patch('brevethub.services.volunteer.ride_mode_context', return_value={'worker_ride_enabled': False})
 @patch('brevethub.services.volunteer.models.upsert_volunteer_signup')
 @patch('brevethub.services.volunteer.models.get_rider_active_volunteer_signups')
 @patch('brevethub.services.volunteer.models.count_slot_confirmed_signups')
@@ -85,7 +87,7 @@ def test_signup_confirms_first_slot(
 @patch('brevethub.services.volunteer.models.get_brevet_event_registration')
 @patch('brevethub.services.volunteer.models.get_volunteer_slot')
 def test_signup_second_slot_is_exception(
-    mock_slot, mock_event, mock_existing, mock_count, mock_active, mock_upsert,
+    mock_slot, mock_event, mock_existing, mock_count, mock_active, mock_upsert, _rm,
 ):
     mock_slot.return_value = _slot(id=101, role_name='Finish Control')
     mock_event.return_value = _event()
