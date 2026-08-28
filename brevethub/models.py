@@ -1081,6 +1081,27 @@ def create_broker_handoff(*, ta_rider_id, strava_athlete_id, access_token,
     return code
 
 
+def consume_broker_handoff(code):
+    """Atomically redeem a one-time Strava handoff by ``code``: delete the row and
+    return its tokens, but only if it exists and has not expired.
+
+    ``DELETE ... RETURNING`` with the TTL guard makes redemption single-use and
+    race-free (a second redeem finds no row). Returns ``None`` for an unknown,
+    already-redeemed, or expired code. ``strava_token_expires_at`` is returned as a
+    Unix epoch integer (matching Strava's native format), not a ``datetime``, so the
+    separate-DB consumer never bridges a bare timestamp.
+    """
+    return db.execute(
+        "DELETE FROM rp_strava_broker_handoff "
+        "WHERE code = %s AND handoff_expires_at > NOW() "
+        "RETURNING ta_rider_id, strava_athlete_id, access_token, refresh_token, "
+        "          EXTRACT(EPOCH FROM strava_token_expires_at)::bigint "
+        "            AS strava_token_expires_at, scope",
+        (code,),
+        returning=True,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Brevet calendar (rp_brevet_event) — a cache of upcoming RUSA brevets parsed by
 # shared/rusa_calendar.py, plus the rider-participation table (rp_event_signup).
