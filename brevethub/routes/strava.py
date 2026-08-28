@@ -19,8 +19,8 @@ import time
 from datetime import datetime
 from urllib.parse import urlencode
 
-from flask import (Blueprint, abort, current_app, flash, redirect, request,
-                   session, url_for)
+from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
+                   request, session, url_for)
 
 from brevethub import models
 from brevethub.decorators import profile_required
@@ -103,7 +103,7 @@ def _broker_connect(origin):
     reason logged (never the state blob) and no Strava redirect.
     """
     secret = current_app.config.get('BROKER_HMAC_SECRET')
-    if origin != current_app.config['BROKER_TEAM_ASHA_ORIGIN']:
+    if origin not in current_app.config['BROKER_ALLOWED_ORIGINS']:
         current_app.logger.warning('Strava broker connect: unknown origin %r', origin)
         abort(400)
     if not secret:
@@ -166,7 +166,7 @@ def callback():
             max_age=current_app.config['BROKER_STATE_MAX_AGE'],
         )
     if (broker_payload is not None
-            and broker_payload.get('origin') == current_app.config['BROKER_TEAM_ASHA_ORIGIN']):
+            and broker_payload.get('origin') in current_app.config['BROKER_ALLOWED_ORIGINS']):
         return _broker_callback(broker_payload)
 
     # Pop the session state + rider id first, so they are cleared on EVERY path.
@@ -306,6 +306,39 @@ def _broker_callback(payload):
         return _broker_return_redirect(return_url, error='connect_failed')
 
     return _broker_return_redirect(return_url, code=handoff_code)
+
+
+@strava_bp.route('/broker/redeem', methods=['POST'])
+def broker_redeem():
+    """Server-to-server: a separate-database consumer (e.g. Runnernet) redeems a
+    one-time handoff ``code`` for its Strava tokens.
+
+    Authenticated by a shared bearer secret (``BROKER_REDEEM_SECRET``) — the opaque
+    code alone is not sufficient because it travels through the consumer's browser.
+    The redemption is single-use and TTL-bound (enforced in SQL by
+    ``consume_broker_handoff``), so the tokens are handed out exactly once and never
+    appear in a URL or log line.
+    """
+    expected = current_app.config.get('BROKER_REDEEM_SECRET')
+    if not expected:
+        current_app.logger.warning('Strava broker redeem: BROKER_REDEEM_SECRET not configured')
+        return jsonify({'error': 'broker_redeem_not_configured'}), 503
+    if not hmac.compare_digest(request.headers.get('Authorization', ''), f'Bearer {expected}'):
+        return jsonify({'error': 'unauthorized'}), 401
+    code = (request.get_json(silent=True) or {}).get('code')
+    if not isinstance(code, str) or not code:
+        return jsonify({'error': 'code_required'}), 400
+    row = models.consume_broker_handoff(code)
+    if row is None:
+        return jsonify({'error': 'invalid_or_expired_code'}), 410
+    return jsonify({
+        'ta_rider_id': row['ta_rider_id'],
+        'strava_athlete_id': row['strava_athlete_id'],
+        'access_token': row['access_token'],
+        'refresh_token': row['refresh_token'],
+        'strava_token_expires_at': row['strava_token_expires_at'],
+        'scope': row['scope'],
+    }), 200
 
 
 @strava_bp.route('/disconnect', methods=['POST'])

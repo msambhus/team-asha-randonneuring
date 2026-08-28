@@ -75,6 +75,13 @@ class Config:
     BROKER_HANDOFF_TTL = 300             # one-time handoff-code lifetime (seconds)
     # Origins allowed to broker a Strava connect through BrevetHub.
     BROKER_TEAM_ASHA_ORIGIN = 'team-asha'
+    # Runnernet (the Team Asha rebuild) runs on its own database, so it cannot read
+    # the shared handoff table directly — it redeems via POST /strava/broker/redeem.
+    BROKER_RUNNERNET_ORIGIN = 'runnernet'
+    BROKER_ALLOWED_ORIGINS = {BROKER_TEAM_ASHA_ORIGIN, BROKER_RUNNERNET_ORIGIN}
+    # Shared bearer secret a separate-DB consumer presents to redeem a one-time
+    # handoff code for its tokens. Unset => the redeem endpoint 503s (never leaks).
+    BROKER_REDEEM_SECRET = os.environ.get('BROKER_REDEEM_SECRET')
     # Absolute return-URL allowlist (scheme://host) for the open-redirect guard —
     # only Team Asha's and BrevetHub's own origins. Overridable via env
     # (comma-separated) for preview deploys / custom domains.
