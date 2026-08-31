@@ -2624,18 +2624,57 @@ def create_validation_submission(*, event_id, rider_id, source_type,
 def add_validation_evidence(submission_id, *, evidence_kind, filename=None,
                             content_type=None, content=None, sha256=None,
                             control_order=None, control_orders=None,
-                            description=None, captured_at=None):
+                            description=None, captured_at=None, storage_path=None):
     return db.execute(
         "INSERT INTO rp_validation_evidence "
         "  (submission_id, evidence_kind, control_order, original_filename, "
         "   control_orders, content_type, byte_size, sha256, captured_at, "
-        "   description, private_content) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "   description, private_content, storage_path) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (submission_id, evidence_kind, control_order, filename, control_orders or [],
          content_type, len(content) if content is not None else None,
          sha256, captured_at,
-         description, Binary(content) if content is not None else None),
+         description, Binary(content) if content is not None else None, storage_path),
         returning=True,
+    )
+
+
+def create_validation_upload(*, rider_id, event_id, storage_path, filename,
+                             content_type, byte_size, sha256, control_order=None):
+    return db.execute(
+        "INSERT INTO rp_validation_upload "
+        "(rider_id, event_id, storage_path, original_filename, content_type, "
+        "byte_size, sha256, control_order) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+        (rider_id, event_id, storage_path, filename, content_type, byte_size, sha256, control_order),
+        returning=True,
+    )
+
+
+def get_validation_uploads(ids, *, rider_id, event_id):
+    if not ids:
+        return []
+    return db.query(
+        "SELECT * FROM rp_validation_upload WHERE id = ANY(%s) AND rider_id=%s "
+        "AND event_id=%s AND attached_at IS NULL "
+        "AND created_at > NOW() - INTERVAL '24 hours' ORDER BY id",
+        (ids, rider_id, event_id),
+    )
+
+
+def get_validation_upload_bytes(rider_id, event_id):
+    row = db.query_one(
+        "SELECT COALESCE(SUM(byte_size), 0) AS total FROM rp_validation_upload "
+        "WHERE rider_id=%s AND event_id=%s AND attached_at IS NULL "
+        "AND created_at > NOW() - INTERVAL '24 hours'",
+        (rider_id, event_id),
+    )
+    return int(row['total'] or 0)
+
+
+def attach_validation_upload(upload_id, submission_id):
+    return db.execute(
+        "UPDATE rp_validation_upload SET attached_at=NOW() WHERE id=%s AND attached_at IS NULL",
+        (upload_id,)
     )
 
 
@@ -2739,7 +2778,7 @@ def get_validation_evidence(submission_id):
 def get_validation_evidence_content(submission_id, evidence_id):
     """One private evidence blob, double-scoped to its submission for admin download."""
     return db.query_one(
-        "SELECT id, original_filename, content_type, private_content "
+        "SELECT id, original_filename, content_type, private_content, storage_path "
         "FROM rp_validation_evidence WHERE submission_id = %s AND id = %s",
         (submission_id, evidence_id),
     )

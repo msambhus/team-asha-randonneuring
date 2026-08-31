@@ -44,9 +44,10 @@
     </section>
     <details class="evidence-section"><summary class="text-primary font-bold cursor-pointer">Traditional proof <span class="font-normal text-text-light text-sm">(optional — click to add receipts, photos, or control notes)</span></summary><p class="evidence-help mt-3 mb-4">Add proof directly to each control. A receipt, checkpoint photo, brevet-card image, or short note can be submitted per row.</p>
       {% if controls %}<div class="space-y-3">{% for control in controls if control.stop_type == 'control' %}<div class="rounded-lg border border-border bg-white p-3"><div class="font-semibold text-primary mb-2">{{ control.stop_order }}. {{ control.location|clean_name }}</div><div class="control-proof-grid"><div class="control-proof-pane"><label class="evidence-help" for="proof_files_{{ control.stop_order }}">Receipt / photo</label><input id="proof_files_{{ control.stop_order }}" name="proof_files_{{ control.stop_order }}" type="file" multiple accept="image/*,.pdf" class="form-input w-full proof-file-input" data-proof-gallery="proof-gallery-{{ control.stop_order }}"><div id="proof-gallery-{{ control.stop_order }}" class="proof-gallery" aria-live="polite"></div></div><div class="control-proof-pane"><label class="evidence-help" for="proof_description_{{ control.stop_order }}">Proof note</label><textarea id="proof_description_{{ control.stop_order }}" name="proof_description_{{ control.stop_order }}" class="form-input w-full" rows="5" placeholder="Receipt time, card answer, or other proof"></textarea></div></div></div>{% endfor %}</div>{% endif %}
-      <p class="upload-status" id="evidence-upload-status" role="status" aria-live="polite">Phone photos are optimized automatically before upload. Combined evidence limit: 4 MB.</p>
+      <p class="upload-status" id="evidence-upload-status" role="status" aria-live="polite">Phone photos are optimized and uploaded individually. Image limit: 10 MB each, 25 MB total.</p>
     </details>
     <section class="evidence-section"><h2 class="text-primary font-bold">Additional context <span class="font-normal text-text-light text-sm">(optional)</span></h2><p class="evidence-help mt-1 mb-3">Explain a road closure, safety detour, GPS gap, or other detail an organizer should review.</p><textarea id="rider_explanation" name="rider_explanation" class="form-input w-full" rows="3" placeholder="Add context for the organizer…"></textarea></section>
+    <input type="hidden" name="uploaded_image_ids" id="uploaded-image-ids" value="[]">
     <div class="flex items-center justify-between gap-3 flex-wrap"><a class="btn bg-white text-primary border border-border" href="{{ url_for('validation.my_validations') }}">Cancel</a><button class="btn btn-primary" type="submit" id="submit-evidence-button"><span class="submit-label">Submit for verification</span></button></div>
 </form>
 </div></div>
@@ -55,6 +56,7 @@
 const evidenceForm = document.getElementById('rider-validation-form');
 const uploadStatus = document.getElementById('evidence-upload-status');
 const SAFE_UPLOAD_BYTES = 3.75 * 1024 * 1024;
+const IMAGE_UPLOAD_URL = {{ url_for('validation.upload_evidence_image_part', event_id=event.id)|tojson }};
 
 function replaceInputFiles(input, files) {
   if (!window.DataTransfer) return false;
@@ -96,11 +98,55 @@ async function prepareEvidenceUploads() {
     }
   }
   const bytes = inputs.reduce(function (sum, input) {
-    return sum + Array.from(input.files || []).reduce(function (total, file) { return total + file.size; }, 0);
+    return sum + Array.from(input.files || []).reduce(function (total, file) {
+      return total + (file.type.startsWith('image/') ? 0 : file.size);
+    }, 0);
   }, 0);
   if (bytes > SAFE_UPLOAD_BYTES) {
     throw new Error('The selected evidence is still too large after photo optimization. Please choose smaller images or upload fewer files (maximum 4 MB total).');
   }
+}
+
+function uploadEvidenceImage(file, controlOrder, completed, total) {
+  return new Promise(function (resolve, reject) {
+    const body = new FormData();
+    body.append('file', file, file.name);
+    if (controlOrder) body.append('control_order', controlOrder);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', IMAGE_UPLOAD_URL);
+    xhr.upload.onprogress = function (event) {
+      if (event.lengthComputable && uploadStatus) {
+        uploadStatus.textContent = 'Uploading image ' + (completed + 1) + ' of ' + total + '… ' + Math.round(event.loaded * 100 / event.total) + '%';
+      }
+    };
+    xhr.onload = function () {
+      let response = {};
+      try { response = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300 && response.id) resolve(response);
+      else reject(new Error(response.error || 'Could not upload ' + file.name + '.'));
+    };
+    xhr.onerror = function () { reject(new Error('Network error while uploading ' + file.name + '.')); };
+    xhr.send(body);
+  });
+}
+
+async function uploadEvidenceImages() {
+  const imageItems = [];
+  evidenceForm.querySelectorAll('.proof-file-input, input[name="proof_files"]').forEach(function (input) {
+    const match = input.name.match(/proof_files_(\d+)/);
+    Array.from(input.files || []).forEach(function (file) {
+      if (file.type.startsWith('image/')) imageItems.push({input, file, controlOrder: match ? match[1] : ''});
+    });
+  });
+  const uploadedIds = [];
+  for (let i = 0; i < imageItems.length; i++) {
+    const item = imageItems[i];
+    const response = await uploadEvidenceImage(item.file, item.controlOrder, i, imageItems.length);
+    uploadedIds.push(response.id);
+    const remaining = Array.from(item.input.files || []).filter(function (file) { return file !== item.file; });
+    if (!replaceInputFiles(item.input, remaining)) throw new Error('This browser cannot finalize image uploads.');
+  }
+  document.getElementById('uploaded-image-ids').value = JSON.stringify(uploadedIds);
 }
 
 evidenceForm?.addEventListener('submit', async function (event) {
@@ -114,6 +160,7 @@ evidenceForm?.addEventListener('submit', async function (event) {
   if (uploadStatus) uploadStatus.textContent = 'Preparing evidence uploads…';
   try {
     await prepareEvidenceUploads();
+    await uploadEvidenceImages();
     if (uploadStatus) uploadStatus.textContent = 'Uploads prepared. Submitting…';
     HTMLFormElement.prototype.submit.call(evidenceForm);
   } catch (error) {

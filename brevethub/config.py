@@ -43,6 +43,14 @@ class Config:
     FIT_MERGE_MAX_FILES = 20
     FIT_MERGE_MAX_BYTES = 4 * 1024 * 1024
 
+    # Private Supabase Storage for evidence images. Images are uploaded one at a
+    # time so Vercel never receives a large combined request body.
+    SUPABASE_URL = os.environ.get('SUPABASE_URL')
+    SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+    EVIDENCE_BUCKET = os.environ.get('BREVETHUB_EVIDENCE_BUCKET', 'brevethub-evidence')
+    EVIDENCE_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+    EVIDENCE_TOTAL_MAX_BYTES = 25 * 1024 * 1024
+
     # Google OAuth — reuse Team Asha's existing web client. The owner registers
     # BrevetHub's redirect URIs on that same client (see brevethub/README.md).
     GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
