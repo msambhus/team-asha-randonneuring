@@ -180,6 +180,30 @@ def project_to_route(lat, lng, track, heading_deg=None):
 _PROJ_BACK_WINDOW_M = 300.0    # allow stepping back this far (GPS noise / brief reversal)
 _PROJ_MIN_FWD_M = 3000.0       # min forward window per step (covers a downsample gap)
 _PROJ_MAX_SPEED_MS = 20.0      # forward window grows with elapsed time at this cap
+# First and last track points within this distance means the route is a closed
+# loop, so the trajectory walk may cross the start/finish seam. A point-to-point
+# route must NOT wrap — the end of its track is the end of the ride.
+_LOOP_CLOSURE_M = 250.0
+# On a loop, the rider's start vertex and finish vertex are the same place. A seed
+# landing this close to the END of the track is remapped to the start-side vertex:
+# nobody begins a ride at the finish.
+_SEED_LOOP_REMAP_M = 1000.0
+
+
+def route_is_loop(track):
+    """True when the track's first and last points are the same place.
+
+    Only a closed loop may have its start/finish seam crossed mid-ride, so this
+    gates every wrapping behaviour below. A point-to-point route keeps the
+    original bounded walk exactly as before.
+    """
+    if not track or len(track) < 2:
+        return False
+    try:
+        return haversine_m(float(track[0]['lat']), float(track[0]['lng']),
+                           float(track[-1]['lat']), float(track[-1]['lng'])) <= _LOOP_CLOSURE_M
+    except (TypeError, ValueError, KeyError):
+        return False
 
 
 def project_history_to_route(history, track, with_start=False,
@@ -216,6 +240,8 @@ def project_history_to_route(history, track, with_start=False,
     if not track or not history:
         return empty
     n = len(track)
+    total = track[-1]['dist_m'] or 0.0
+    is_loop = route_is_loop(track)
     # Seed on the first on-route fix (skipping off-route warm-up fixes), picking
     # the leg that agrees with the rider's initial heading. Fall back to the first
     # fix's best match when nothing is cleanly on-route yet.
@@ -248,7 +274,24 @@ def project_history_to_route(history, track, with_start=False,
             result = (None, None, off_by)
         return (*result, []) if with_point_projections else result
     start_idx, start_dist = cur, track[cur]['dist_m']
-    best_dist, best_idx = track[cur]['dist_m'], cur
+    # Progress is tracked in the RIDER's frame, not the route's. On a loop begun
+    # mid-route the absolute along-route distance FALLS when they cross the seam
+    # (mile 124.6 -> mile 0), so keeping the maximum absolute distance would freeze
+    # progress there forever. Measuring from the rider's own start makes it
+    # monotonic again. For a mile-0 start this is the identity, so ordinary rides
+    # are unaffected.
+    def _prog(dist_m):
+        if not is_loop or not total:
+            return dist_m
+        return (dist_m - start_dist) % total
+
+    # NOTE: no special handling is needed for a seed that lands on the loop's FINISH
+    # vertex instead of its start vertex (the same physical place). Because progress
+    # below is measured modulo the route total from the seed, an offset of `total` is
+    # arithmetically identical to an offset of 0. An earlier version of this fix
+    # remapped such a seed explicitly; reverting that remap broke no test, so it was
+    # removed rather than kept on faith.
+    best_prog, best_idx = 0.0, cur
     last_valid_t = history[seed_pos]['recorded_at']
     point_projections = [(None, None, None) for _ in history]
     point_projections[seed_pos] = (start_dist, start_idx, off_by)
@@ -261,17 +304,47 @@ def project_history_to_route(history, track, with_start=False,
             continue
         lat, lng = float(p['lat']), float(p['lng'])
         cur_dist = track[cur]['dist_m']
-        hi = cur_dist + max(_PROJ_MIN_FWD_M, _PROJ_MAX_SPEED_MS * dt)
-        lo = cur_dist - _PROJ_BACK_WINDOW_M
+        fwd_window = max(_PROJ_MIN_FWD_M, _PROJ_MAX_SPEED_MS * dt)
+
+        def _ahead(dist_m):
+            """Distance from the cursor forward to `dist_m`, wrapping a loop."""
+            delta = dist_m - cur_dist
+            return delta % total if (is_loop and total) else delta
+
+        def _behind(dist_m):
+            delta = cur_dist - dist_m
+            return delta % total if (is_loop and total) else delta
+
+        # Candidate indices around the cursor. The index walk wraps ONLY on a closed
+        # loop: on a point-to-point course the end of the track is the end of the
+        # ride, and wrapping would let a fix near the finish be picked up as if it
+        # were just behind a rider near the start.
+        def _walk(step_from, step_to, forward):
+            for step in range(step_from, step_to):
+                i = cur + step if forward else cur - step
+                if i >= n:
+                    if not is_loop:
+                        return
+                    i -= n
+                elif i < 0:
+                    if not is_loop:
+                        return
+                    i += n
+                yield step, i
+
         best_i, best_d = cur, float('inf')
-        for i in range(cur, n):              # forward within the window
-            if track[i]['dist_m'] > hi:
+        # Forward within the window. A rider who started mid-loop MUST cross the
+        # start/finish seam; stopping at the end of the array froze them there.
+        for step, i in _walk(0, n, True):
+            if step and _ahead(track[i]['dist_m']) > fwd_window:
                 break
             d = haversine_m(lat, lng, track[i]['lat'], track[i]['lng'])
             if d < best_d:
                 best_d, best_i = d, i
-        for i in range(cur - 1, -1, -1):     # limited backward within the window
-            if track[i]['dist_m'] < lo:
+        # Limited backward within the window (GPS noise / brief reversal), wrapping
+        # the same way so a fix just before the seam is still reachable.
+        for step, i in _walk(1, n, False):
+            if _behind(track[i]['dist_m']) > _PROJ_BACK_WINDOW_M:
                 break
             d = haversine_m(lat, lng, track[i]['lat'], track[i]['lng'])
             if d < best_d:
@@ -285,7 +358,8 @@ def project_history_to_route(history, track, with_start=False,
                 lat, lng, track, heading_deg=course_over_ground(recent))
             if (global_i is not None and global_off is not None
                     and global_off <= ON_ROUTE_MAX_M
-                    and global_dist >= lo and global_dist <= hi):
+                    and (_ahead(global_dist) <= fwd_window
+                         or _behind(global_dist) <= _PROJ_BACK_WINDOW_M)):
                 best_i, best_d = global_i, global_off
         off_by = best_d
         # Never advance the trajectory cursor for an off-course GPS fix. Keep
@@ -294,10 +368,12 @@ def project_history_to_route(history, track, with_start=False,
             cur = best_i
             last_valid_t = p['recorded_at']
             point_projections[history_i] = (track[cur]['dist_m'], cur, best_d)
-            if track[cur]['dist_m'] > best_dist:
-                best_dist, best_idx = track[cur]['dist_m'], cur
+            cur_prog = _prog(track[cur]['dist_m'])
+            if cur_prog > best_prog:
+                best_prog, best_idx = cur_prog, cur
         else:
             point_projections[history_i] = (None, None, best_d)
+    best_dist = track[best_idx]['dist_m']
     if with_start:
         result = (best_dist, best_idx, off_by, start_dist, start_idx)
     else:

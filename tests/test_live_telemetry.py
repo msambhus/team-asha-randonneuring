@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from services import live_telemetry as tlm
+from services.live_telemetry import _LOOP_CLOSURE_M as _LOOP_GAP_MIN_M
 
 
 def _t(secs):
@@ -796,3 +797,228 @@ def test_build_actual_trail_simplifies_redundancy_but_keeps_real_turns():
     assert trail[0] == [-122.0, 37.0]
     assert trail[-1] == pytest.approx([-121.9901, 37.0])
     assert any(lat == pytest.approx(37.01) for _lng, lat in trail)
+
+
+# ── Loop start/finish seam — issue #919 ──────────────────────────────────────
+# A loop permanent begun partway round must cross the route's start/finish seam.
+# The trajectory walk used `range(cur, n)` and so could never advance past the
+# final track point: progress froze at the seam (observed live on Iron Horse 200k
+# — stuck at 4.4 mi while the rider was 18 mi in, reported 17.8 km off route).
+
+def _square_loop(step_m=100.0):
+    """A closed square loop, ~100 m between points, dist_m ascending then closing.
+
+    Built from a real lat/lng square so haversine distances are consistent with
+    the dist_m column the walk compares against.
+    """
+    lat0, lng0 = 37.0, -122.0
+    dlat = step_m / 111320.0
+    dlng = step_m / (111320.0 * 0.7986355)  # cos(37°)
+    corners = []
+    for i in range(20):                      # east
+        corners.append((lat0, lng0 + i * dlng))
+    for i in range(20):                      # north
+        corners.append((lat0 + i * dlat, lng0 + 19 * dlng))
+    for i in range(20):                      # west
+        corners.append((lat0 + 19 * dlat, lng0 + (19 - i) * dlng))
+    for i in range(20):                      # south, back to the start
+        corners.append((lat0 + (19 - i) * dlat, lng0))
+    corners.append((lat0, lng0))             # close the loop exactly
+    track, run = [], 0.0
+    prev = None
+    for lat, lng in corners:
+        if prev is not None:
+            run += tlm.haversine_m(prev[0], prev[1], lat, lng)
+        track.append({'lat': lat, 'lng': lng, 'dist_m': run})
+        prev = (lat, lng)
+    return track
+
+
+def test_route_is_loop_detects_a_closed_course():
+    assert tlm.route_is_loop(_square_loop()) is True
+    assert tlm.route_is_loop(_TRACK) is False, 'a point-to-point route is not a loop'
+
+
+def _ride_from(track, start_i, count, secs=30):
+    """History following the track forward from `start_i`, wrapping the loop."""
+    n = len(track) - 1                       # last point duplicates the first
+    return [{'lat': track[(start_i + k) % n]['lat'],
+             'lng': track[(start_i + k) % n]['lng'],
+             'recorded_at': _t(k * secs)} for k in range(count)]
+
+
+def test_progress_continues_past_the_start_finish_seam():
+    """The defect. Starting at 3/4 round and riding on must keep accumulating."""
+    track = _square_loop()
+    total = track[-1]['dist_m']
+    start_i = 60                             # three quarters round
+    history = _ride_from(track, start_i, 30)  # crosses the seam
+    dist_m, idx, off_by = tlm.project_history_to_route(history, track)
+    offset, _ = tlm.route_start_offset_m(history, track)
+    progressed = tlm.distance_progressed_m(dist_m, offset, total)
+    expected = 29 * 100.0                    # 29 hops of ~100 m
+    assert off_by is not None and off_by < 50, 'rider should read as on-route'
+    assert progressed > expected * 0.8, (
+        f'progress froze at the seam: {progressed:.0f} m, expected ~{expected:.0f} m')
+
+
+def test_the_seam_crossing_is_monotonic_for_every_fix():
+    """Per-fix projections must not jump backwards as the seam is crossed."""
+    track = _square_loop()
+    total = track[-1]['dist_m']
+    history = _ride_from(track, 60, 30)
+    *_, projections = tlm.project_history_to_route(
+        history, track, with_start=True, with_point_projections=True)
+    offset, _ = tlm.route_start_offset_m(history, track)
+    seq = [(d - offset) % total for d, _i, _o in projections if d is not None]
+    assert len(seq) >= 25, 'most fixes should project cleanly'
+    assert all(b >= a - 1.0 for a, b in zip(seq, seq[1:])), f'non-monotonic: {seq}'
+
+
+def _collinear_loop(step_m=100.0):
+    """A loop whose LAST segment approaches the start on the same bearing as its
+    first segment leaves it — the real Iron Horse geometry at Alamo Plaza.
+
+    Both candidate seed legs then point the same way, so heading cannot separate
+    the start vertex from the finish vertex. `_square_loop` does not reproduce the
+    defect because its start leg runs east and its finish leg runs north.
+    """
+    lat0, lng0 = 37.0, -122.0
+    dlat = step_m / 111320.0
+    dlng = step_m / (111320.0 * 0.7986355)
+    # The first vertex sits 0.3 steps (~30 m) east of the physical start corner and
+    # the closing vertex lands ON it. Downsampling routinely produces this, and it
+    # is what makes the FINISH vertex the nearest one to a rider waiting at the
+    # corner — exactly the real Alamo Plaza case, where the seed picked mile 124.5.
+    pts = [(lat0, lng0 + (i + 0.3) * dlng) for i in range(15)]  # east from the start
+    pts += [(lat0 + i * dlat, lng0 + 14 * dlng) for i in range(1, 15)]   # north
+    pts += [(lat0 + 14 * dlat, lng0 + (14 - i) * dlng) for i in range(1, 30)]  # west, past
+    pts += [(lat0 + (14 - i) * dlat, lng0 - 15 * dlng) for i in range(1, 15)]  # south
+    pts += [(lat0, lng0 + (i - 15) * dlng) for i in range(1, 16)]  # EAST back to the corner
+    track, run, prev = [], 0.0, None
+    for lat, lng in pts:
+        if prev is not None:
+            run += tlm.haversine_m(prev[0], prev[1], lat, lng)
+        track.append({'lat': lat, 'lng': lng, 'dist_m': run})
+        prev = (lat, lng)
+    return track
+
+
+def test_a_stationary_loop_start_seeds_at_the_start_not_the_finish():
+    """A rider idling at the start/finish point of a loop whose two legs run the
+    same way through that point, so heading cannot disambiguate them.
+
+    CHARACTERISATION, not a regression guard for the seam fix: the existing
+    `project_to_route` tie-break already resolves this fixture to the start vertex.
+    The live failure seeded on the FINISH vertex instead, and no synthetic fixture
+    reproduced that, so an explicit remap was written and then removed — see the
+    note in project_history_to_route on why it earns nothing once progress is
+    measured in the rider's frame.
+    """
+    track = _collinear_loop()
+    total = track[-1]['dist_m']
+    assert tlm.route_is_loop(track), 'fixture must be a closed loop'
+    # sanity: the two legs really are ambiguous by bearing
+    out = tlm.bearing_deg(track[0]['lat'], track[0]['lng'], track[1]['lat'], track[1]['lng'])
+    back = tlm.bearing_deg(track[-2]['lat'], track[-2]['lng'], track[-1]['lat'], track[-1]['lng'])
+    assert tlm.angle_diff_deg(out, back) < 20, 'fixture should be collinear at the start'
+
+    # Waiting at the physical corner, which IS the closing vertex — so plain
+    # nearest-point matching resolves to the finish, not the start.
+    corner = track[-1]
+    nearest_end = tlm.haversine_m(corner['lat'], corner['lng'], track[-1]['lat'], track[-1]['lng'])
+    nearest_start = tlm.haversine_m(corner['lat'], corner['lng'], track[0]['lat'], track[0]['lng'])
+    assert nearest_end < nearest_start, 'fixture must make the FINISH vertex nearest'
+
+    idle = [{'lat': corner['lat'], 'lng': corner['lng'], 'recorded_at': _t(k * 10)}
+            for k in range(6)]
+    moving = [{'lat': track[k]['lat'], 'lng': track[k]['lng'],
+               'recorded_at': _t(60 + k * 30)} for k in range(1, 12)]
+    offset, _offset_i = tlm.route_start_offset_m(idle + moving, track)
+    assert offset < total * 0.05, (
+        f'seeded at {offset:.0f} m of {total:.0f} — that is the finish vertex')
+    dist_m, _idx, _off = tlm.project_history_to_route(idle + moving, track)
+    progressed = tlm.distance_progressed_m(dist_m, offset, total)
+    assert progressed > 900, f'progress should follow the moving fixes, got {progressed:.0f} m'
+
+
+def test_progress_tracks_expected_distance_right_through_the_seam():
+    """Not just monotonic — ACCURATE across the seam.
+
+    Without the wrapping forward window the cursor sticks on the final track point
+    (which coincides with the start) until the rider is beyond the on-route
+    tolerance, so progress lags by up to that tolerance before the global-rejoin
+    path recovers it. This pins the local walk itself.
+    """
+    track = _square_loop()
+    total = track[-1]['dist_m']
+    history = _ride_from(track, 60, 30)
+    offset, _ = tlm.route_start_offset_m(history, track)
+    *_, projections = tlm.project_history_to_route(
+        history, track, with_start=True, with_point_projections=True)
+    worst = 0.0
+    for k, (d, _i, _o) in enumerate(projections):
+        if d is None:
+            continue
+        worst = max(worst, abs(((d - offset) % total) - k * 100.0))
+    assert worst < 250, f'progress drifted up to {worst:.0f} m from the true distance'
+
+
+def test_a_point_to_point_route_never_walks_backwards_to_its_finish():
+    """The index walk must not wrap on a point-to-point course. A rider near the
+    start with the finish only a few hundred metres 'behind' in modulo arithmetic
+    must not be snapped forward to the end of the route."""
+    track = _TRACK
+    total = track[-1]['dist_m']
+    history = [{'lat': 37.0, 'lng': -122.00, 'recorded_at': _t(0)},
+               {'lat': 37.0, 'lng': -121.999, 'recorded_at': _t(60)}]
+    dist_m, idx, _off = tlm.project_history_to_route(history, track)
+    assert dist_m is not None and dist_m < total * 0.5, (
+        f'walked to {dist_m} of {total} — the walk wrapped on a point-to-point route')
+
+
+def _near_loop():
+    """A long course whose finish comes back NEAR the start but not close enough to
+    count as closed. Wrapping here would be wrong, and the two ends are close
+    enough geographically that an ungated index wrap would happily jump between
+    them."""
+    track = [dict(p) for p in _square_loop()]
+    dlng = 400.0 / (111320.0 * 0.7986355)
+    # WEST of the start — nothing else on the square lies there, so this point is
+    # 400 m from the start and far from every other part of the route. Displacing it
+    # east would land it exactly on the outbound leg, where the forward walk finds
+    # it legitimately and the fixture proves nothing.
+    track[-1] = {**track[-1], 'lng': track[-1]['lng'] - dlng}   # open the loop by 400 m
+    return track
+
+
+def test_a_near_loop_is_not_treated_as_closed():
+    track = _near_loop()
+    assert tlm.route_is_loop(track) is False
+    assert tlm.haversine_m(track[0]['lat'], track[0]['lng'],
+                           track[-1]['lat'], track[-1]['lng']) > _LOOP_GAP_MIN_M
+
+
+def test_an_open_course_never_jumps_from_its_start_to_its_finish():
+    """A rider at the start of an OPEN course, with a fix landing on the finish
+    (400 m away, but 8 km along the route). The forward window cannot legitimately
+    reach it; an ungated backward index wrap reaches it in one step and reports the
+    whole route as complete."""
+    track = _near_loop()
+    total = track[-1]['dist_m']
+    history = [{'lat': track[0]['lat'], 'lng': track[0]['lng'], 'recorded_at': _t(0)},
+               {'lat': track[1]['lat'], 'lng': track[1]['lng'], 'recorded_at': _t(30)},
+               {'lat': track[-1]['lat'], 'lng': track[-1]['lng'], 'recorded_at': _t(60)}]
+    dist_m, _idx, _off, _sd, _si, projections = tlm.project_history_to_route(
+        history, track, with_start=True, with_point_projections=True)
+    assert dist_m is not None and dist_m < total * 0.5, (
+        f'jumped to {dist_m:.0f} m of {total:.0f} — the walk wrapped on an open course')
+    # The returned distance is additionally protected by the monotonic guard, so
+    # assert the PER-FIX projection too: those indices feed the ascent and wind
+    # splits and the stop-day classification, and a wrapped match corrupts them
+    # even when the headline distance survives.
+    last_dist, last_idx, _ = projections[-1]
+    assert last_idx is None or last_idx < len(track) - 5, (
+        f'final fix projected to idx {last_idx} of {len(track) - 1} — wrapped to the finish')
+    assert last_dist is None or last_dist < total * 0.5, (
+        f'final fix projected to {last_dist:.0f} m of {total:.0f}')
