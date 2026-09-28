@@ -123,6 +123,7 @@ def _render_form(event, *, status=200, values=None):
         selected_id = str(min(activities, key=score).get('strava_activity_id') or '')
     plan = models.get_brevet_route_plan_with_stops(event['id']) or {'stops': []}
     return render_template('validation_submit.html', event=event, values=values or {},
+                           strava_connected=bool(strava.get('connected')),
                            strava_activities=activities, selected_strava_activity_id=selected_id,
                            controls=plan.get('stops') or []), status
 
@@ -177,6 +178,9 @@ def submit_validation(event_id):
             flash('Enter a Strava activity URL containing its numeric activity id.', 'error')
             return _render_form(event, 400, request.form)
     if strava_id:
+        if not models.get_strava_connection(rider['id']):
+            flash('Connect Strava before submitting a Strava activity. This lets SFR retrieve the private GPS stream for validation.', 'error')
+            return _render_form(event, status=400, values=request.form)
         # Keep rider submission fast. The private activity stream is fetched
         # and validated when an organizer first opens the submission.
         metadata.update({'format': 'strava_stream', 'source': 'Strava',
