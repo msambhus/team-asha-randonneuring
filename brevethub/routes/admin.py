@@ -33,6 +33,7 @@ from flask import (Blueprint, abort, current_app, flash, redirect,
 from brevethub import models
 from brevethub.decorators import current_rider, login_required
 from brevethub.shared.operations_status import route_plan_status
+from brevethub.services.evidence_storage import EvidenceStorageError, signed_url
 from brevethub.shared.control_times import control_open_time_minutes
 from brevethub.shared.rwgps import (build_ride_plan, extract_controls,
                                     extract_rwgps_route_id, fetch_route)
@@ -699,8 +700,14 @@ def validation_detail(submission_id):
 @operator_required
 def validation_evidence(submission_id, evidence_id):
     evidence = models.get_validation_evidence_content(submission_id, evidence_id)
-    if not evidence or evidence.get('private_content') is None:
+    if not evidence or (evidence.get('private_content') is None and not evidence.get('storage_path')):
         abort(404)
+    if evidence.get('storage_path'):
+        try:
+            return redirect(signed_url(current_app.config, current_app.config['EVIDENCE_BUCKET'],
+                                       evidence['storage_path']))
+        except EvidenceStorageError:
+            abort(404)
     content_type = evidence.get('content_type') or 'application/octet-stream'
     inline = content_type.startswith('image/') or content_type == 'application/pdf'
     return send_file(

@@ -78,6 +78,8 @@ Environment variables (BrevetHub's own namespace):
 | `STRAVA_CLIENT_ID` | Strava app client id (**default `113090`** — Team Asha's app; override only for a separate app) |
 | `STRAVA_CLIENT_SECRET` | Strava app client secret — **required for Strava connect**; unset = the button flashes a config message, no crash |
 | `CRON_SECRET` | Bearer secret for the scheduled calendar refresh (`/cron/refresh-calendar`). Unset = the cron endpoint 500s (never scrapes unauthenticated). Its own value, separate from Team Asha's. |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Server-only credentials for the private evidence image Storage bucket |
+| `BREVETHUB_EVIDENCE_BUCKET` | Optional private Storage bucket name; defaults to `brevethub-evidence` |
 
 No secrets are committed — `.env` is git-ignored and the README uses placeholders.
 

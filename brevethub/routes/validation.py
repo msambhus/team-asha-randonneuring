@@ -6,8 +6,10 @@ form field.  The parsing and advisory checks are shared with the operator queue
 so a rider submission produces exactly the same evidence/check records.
 """
 import json
+import hashlib
 import re
 import zlib
+from uuid import uuid4
 from datetime import datetime, timedelta, timezone, time
 from zoneinfo import ZoneInfo
 
@@ -24,9 +26,12 @@ from brevethub.routes.strava import _valid_access_token
 from shared.strava import fetch_activity_streams
 from brevethub.shared.strava_analysis import _compress_streams, build_activity_analysis
 from brevethub.shared.rwgps import extract_rwgps_route_id
+from brevethub.services.evidence_storage import EvidenceStorageError, upload as upload_evidence_image
 
 validation_bp = Blueprint('validation', __name__)
 _MAX_UPLOAD = 4 * 1024 * 1024
+_MAX_EVIDENCE_IMAGE = 10 * 1024 * 1024
+_MAX_EVIDENCE_TOTAL = 25 * 1024 * 1024
 _STATE_ZONES = {
     **{s: 'America/Los_Angeles' for s in ('CA', 'NV', 'OR', 'WA')},
     **{s: 'America/Denver' for s in ('CO', 'ID', 'MT', 'NM', 'UT', 'WY')},
@@ -135,6 +140,40 @@ def my_validations():
                            events=models.get_rider_completed_validation_events(rider['id']))
 
 
+@validation_bp.route('/my/validations/<int:event_id>/evidence-upload', methods=['POST'])
+@profile_required
+def upload_evidence_image_part(event_id):
+    """Upload one image independently of the final evidence submission."""
+    rider = current_rider()
+    eligible = next((row for row in models.get_rider_completed_validation_events(rider['id'])
+                     if int(row['event_id']) == event_id), None)
+    if not eligible:
+        abort(404)
+    uploaded = request.files.get('file')
+    content_type = uploaded.content_type if uploaded else ''
+    if not uploaded or not uploaded.filename or not content_type.startswith('image/'):
+        return {'error': 'Choose an image file.'}, 400
+    data = uploaded.read()
+    if not data or len(data) > _MAX_EVIDENCE_IMAGE:
+        return {'error': 'Each evidence image must be between 1 byte and 10 MB.'}, 413
+    if models.get_validation_upload_bytes(rider['id'], event_id) + len(data) > _MAX_EVIDENCE_TOTAL:
+        return {'error': 'Evidence images are limited to 25 MB per submission.'}, 413
+    path = f'staging/{rider["id"]}/{event_id}/{uuid4().hex}'
+    try:
+        upload_evidence_image(current_app.config, current_app.config['EVIDENCE_BUCKET'],
+                              path, data, content_type)
+        created = models.create_validation_upload(
+            rider_id=rider['id'], event_id=event_id, storage_path=path,
+            filename=uploaded.filename, content_type=content_type, byte_size=len(data),
+            sha256=hashlib.sha256(data).hexdigest(),
+            control_order=request.form.get('control_order', type=int),
+        )
+    except EvidenceStorageError as exc:
+        current_app.logger.warning('Evidence image upload failed: %s', exc)
+        return {'error': 'Image storage is temporarily unavailable. Try again.'}, 503
+    return {'id': created['id'], 'filename': uploaded.filename, 'bytes': len(data)}
+
+
 @validation_bp.route('/my/validations/<int:event_id>/new', methods=['GET', 'POST'])
 @profile_required
 def submit_validation(event_id):
@@ -202,6 +241,16 @@ def submit_validation(event_id):
                 return _render_form(event, 400, request.form)
     route_plan = models.get_brevet_route_plan_with_stops(event_id) or {'plan': {}, 'stops': []}
     traditional = False
+    try:
+        image_upload_ids = [int(value) for value in json.loads(request.form.get('uploaded_image_ids') or '[]')]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        flash('Uploaded evidence references are invalid. Please try again.', 'error')
+        return _render_form(event, 400, request.form)
+    staged_images = models.get_validation_uploads(image_upload_ids, rider_id=rider['id'], event_id=event_id)
+    if len(staged_images) != len(set(image_upload_ids)):
+        flash('One or more evidence images expired. Please upload them again.', 'error')
+        return _render_form(event, 400, request.form)
+    traditional = bool(staged_images)
     for uploaded in request.files.getlist('proof_files'):
         if not uploaded or not uploaded.filename:
             continue
@@ -264,6 +313,15 @@ def submit_validation(event_id):
                                        content_type=uploaded.content_type, content=data, sha256=digest,
                                        control_orders=sorted(evidence_orders) if kind == 'traditional' else [],
                                        description=proof_description if kind == 'traditional' else None)
+    for item in staged_images:
+        models.add_validation_evidence(
+            submission_id, evidence_kind='traditional', filename=item['original_filename'],
+            content_type=item['content_type'], sha256=item['sha256'],
+            control_order=item['control_order'],
+            control_orders=[item['control_order']] if item['control_order'] else sorted(evidence_orders),
+            description=proof_description, storage_path=item['storage_path'],
+        )
+        models.attach_validation_upload(item['id'], submission_id)
     if proof_description and not any(row[0] == 'traditional' for row in file_rows):
         models.add_validation_evidence(submission_id, evidence_kind='traditional',
                                        control_orders=sorted(evidence_orders), description=proof_description)
