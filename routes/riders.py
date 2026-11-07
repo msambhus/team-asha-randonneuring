@@ -603,7 +603,10 @@ def upcoming_brevets(season_name):
 
     # Build ride plan lookup for RUSA events
     plans = get_all_ride_plans()
-    _match_plans_to_events(rusa_events, plans)
+    # FK first (ride.ride_plan_id via the SQL JOIN), name match only as a fallback —
+    # otherwise near-identical plan names (e.g. 'DPC 200k - 2025' vs '- 2026') let the
+    # wrong, older plan win and the card links to a plan with the old start time.
+    _match_plans_to_events(rusa_events, plans, only_if_missing=True)
 
     # Build plan_slug_to_id unconditionally so it's available for wind warnings
     # and for the user-specific custom plan lookup below
@@ -1125,7 +1128,7 @@ def rider_profile(rusa_id):
         signups_list.append(ride_dict)
     
     plans = get_all_ride_plans()
-    _match_plans_to_events(signups_list, plans)
+    _match_plans_to_events(signups_list, plans, only_if_missing=True)
 
     # Pass 1: compute readiness for all rides, collect context for AI
     rides_for_ai = []
@@ -2399,7 +2402,7 @@ def rider_advice_api(rusa_id):
         signups_list.append(ride_dict)
 
     plans = get_all_ride_plans()
-    _match_plans_to_events(signups_list, plans)
+    _match_plans_to_events(signups_list, plans, only_if_missing=True)
 
     rides_for_ai = []
     today = date.today()

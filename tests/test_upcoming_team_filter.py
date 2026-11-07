@@ -146,3 +146,25 @@ def test_template_has_team_asha_filter_and_js():
     assert 'regionMatch = !isTeam;' in src
     # Default view is enforced on load.
     assert 'applyFilters();   // enforce the default view' in src
+
+
+def test_linked_plan_wins_over_name_match(client):
+    """A ride's FK-linked plan must not be overwritten by a name match to a
+    near-identical older plan (DPC 200k - 2025 vs - 2026 regression)."""
+    plans = [
+        {'id': 7, 'name': 'DPC 200k - 2025', 'slug': 'dpc-200k-2025',
+         'rwgps_url': 'https://ridewithgps.com/routes/1761160',
+         'rwgps_url_team': 'https://ridewithgps.com/routes/53141262'},
+        {'id': 3, 'name': 'DPC 200k - 2026', 'slug': 'dpc-200k-2026',
+         'rwgps_url': 'https://ridewithgps.com/routes/1761160',
+         'rwgps_url_team': 'https://ridewithgps.com/routes/53141262'},
+    ]
+    linked = _event(id=121, name='Del Puerto Canyon 200k',
+                    route_name='DPC 200k - 2026', plan_slug='dpc-200k-2026')
+    unlinked = _event(id=122, name='DPC 200k', route_name='DPC 200k - 2026',
+                      plan_slug=None)
+    ctx = _render_upcoming(client, [linked, unlinked], plans=plans)
+    rendered = {e['id']: e for e in ctx['rusa_events']}
+    assert rendered[121]['plan_slug'] == 'dpc-200k-2026'
+    # Rides with no FK still get a plan from name matching.
+    assert rendered[122]['plan_slug'] in ('dpc-200k-2025', 'dpc-200k-2026')
